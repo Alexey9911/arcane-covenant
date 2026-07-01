@@ -1,0 +1,11 @@
+node_modules
+dist
+.git
+qa
+scripts
+meshy_output
+PLAN.md
+README.md
+*.log
+.env
+.env.*
