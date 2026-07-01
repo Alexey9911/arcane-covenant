@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+meshy_output
+*.log
+scripts/meshy_status.json
+scripts/meshy_rig_status.json
+qa/*.png
+.vercel
