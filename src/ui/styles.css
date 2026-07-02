@@ -609,9 +609,8 @@ html, body {
   transition: opacity 0.15s, border-color 0.15s;
 }
 .chat-input:focus { opacity: 1; border-color: var(--gold-dim); }
-/* el chat vive aunque el HUD esté oculto (setup/lobbies online) */
-#hud.hidden .chat.detached { display: flex; }
-#hud.hidden .chat.detached { position: fixed; z-index: 45; }
+.chat { z-index: 46; }
+.chat-hidden { display: none !important; }
 
 .create-row { display: flex; gap: 8px; margin-top: 12px; }
 .create-row .c-title { flex: 1; text-align: left; font-family: var(--font-ui); }

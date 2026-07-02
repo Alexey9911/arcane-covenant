@@ -235,11 +235,12 @@ export class Hud {
 
   private buildChat(): void {
     this.chatEl = document.createElement('div');
-    this.chatEl.className = 'chat clickable';
+    this.chatEl.className = 'chat clickable chat-hidden';
+    // el chat vive FUERA del #hud: visible también en setup/lobbies online
+    (this.root.parentElement ?? this.root).appendChild(this.chatEl);
     this.chatEl.innerHTML = `
       <div class="chat-log"></div>
       <input class="chat-input" maxlength="90" placeholder="Escribe… (Enter)" />`;
-    this.root.appendChild(this.chatEl);
     this.chatLog = this.chatEl.querySelector('.chat-log')!;
     this.chatInput = this.chatEl.querySelector('.chat-input')!;
     // mientras escribes, el juego no roba las teclas
@@ -272,7 +273,7 @@ export class Hud {
 
   /** El chat también se ve fuera del HUD (setup/lobbies). */
   setChatDetached(v: boolean): void {
-    this.chatEl.classList.toggle('detached', v);
+    this.chatEl.classList.toggle('chat-hidden', !v);
   }
 
   chatMessage(from: string, msg: string, color = '#e8e2f2'): void {
