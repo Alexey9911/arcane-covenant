@@ -5,6 +5,10 @@ const FILES = [
   'boss_roar', 'boss_slam', 'boss_cast_dark', 'boss_enrage', 'hero_death',
   'revive_channel', 'revive_complete', 'player_hit', 'victory_stinger', 'defeat_stinger',
   'ui_click', 'ui_hover', 'ui_buy', 'ui_join', 'ambience_arena',
+  // diálogos de boss (TTS)
+  'voice/golem_intro', 'voice/golem_phase', 'voice/golem_enrage', 'voice/golem_kill', 'voice/golem_death',
+  'voice/lich_intro', 'voice/lich_phase', 'voice/lich_enrage', 'voice/lich_kill', 'voice/lich_death',
+  'voice/demon_intro', 'voice/demon_phase', 'voice/demon_enrage', 'voice/demon_kill', 'voice/demon_death',
 ] as const;
 
 export type SoundName = typeof FILES[number];
@@ -20,6 +24,8 @@ export class AudioSystem {
   private amb!: GainNode;
   private unlocked = false;
   private lastPlay = new Map<string, number>();
+  /** Mientras un boss habla, sus SFX de ataque/daño se silencian. */
+  muteBossUntil = 0;
 
   /** Debe llamarse desde un gesto del usuario. */
   unlock(): void {
@@ -56,22 +62,32 @@ export class AudioSystem {
     }));
   }
 
-  play(name: SoundName, opts: { volume?: number; rate?: number; group?: 'sfx' | 'ui'; throttleMs?: number } = {}): void {
-    if (!this.ctx) return;
+  /** Devuelve la duración del sonido en segundos (0 si no sonó). */
+  play(name: SoundName, opts: { volume?: number; rate?: number; group?: 'sfx' | 'ui'; throttleMs?: number } = {}): number {
+    if (!this.ctx) return 0;
+    // mientras el boss habla, silenciar sus SFX propios
+    if (name.startsWith('boss_') && performance.now() < this.muteBossUntil) return 0;
     const buf = this.buffers.get(name);
-    if (!buf) return;
+    if (!buf) return 0;
     const now = performance.now();
     const throttle = opts.throttleMs ?? 60;
-    if (now - (this.lastPlay.get(name) ?? -1e9) < throttle) return;
+    if (now - (this.lastPlay.get(name) ?? -1e9) < throttle) return 0;
     this.lastPlay.set(name, now);
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
-    src.playbackRate.value = (opts.rate ?? 1) * (0.96 + Math.random() * 0.08);
+    const rate = (opts.rate ?? 1) * (name.startsWith('voice/') ? 1 : 0.96 + Math.random() * 0.08);
+    src.playbackRate.value = rate;
     const g = this.ctx.createGain();
     g.gain.value = opts.volume ?? 1;
     src.connect(g);
     g.connect(opts.group === 'ui' ? this.ui : this.sfx);
     src.start();
+    return buf.duration / rate;
+  }
+
+  /** Duración de un buffer cargado (0 si aún no está). */
+  duration(name: SoundName): number {
+    return this.buffers.get(name)?.duration ?? 0;
   }
 
   loop(name: SoundName, opts: { volume?: number; group?: 'sfx' | 'amb'; fadeIn?: number } = {}): LoopHandle {

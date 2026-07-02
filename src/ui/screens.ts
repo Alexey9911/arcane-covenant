@@ -1,17 +1,50 @@
-import { LOBBY_NAMES, UPGRADES, upgradeCost, BOSSES, BossDef } from '../game/balance';
-import type { Game } from '../game/game';
+import { LOBBY_NAMES, UPGRADES, upgradeCost, BOSSES, BossDef, PLAYER_KITS, CLASSES } from '../game/balance';
+import { hex } from '../game/palette';
+import type { Game, SetupStep } from '../game/game';
 
-export type ScreenName = 'title' | 'lobby' | 'loading' | 'market' | 'victory' | 'defeat' | 'runComplete';
+export type ScreenName = 'title' | 'lobby' | 'loading' | 'market' | 'victory' | 'defeat' | 'runComplete' | 'setup';
 
 export interface ScreensCallbacks {
   onTitleEnter(): void;
   onJoin(): void;
+  onBattleStart(): void;
   onVictoryContinue(): void;
   onMarketBuy(id: string): boolean;
   onMarketContinue(): void;
   onDefeatContinue(): void;
   onRunCompleteContinue(): void;
-  playUi(sound: 'ui_click' | 'ui_hover'): void;
+  playUi(sound: 'ui_click' | 'ui_hover' | 'ui_join'): void;
+}
+
+const CLASS_DESC: Record<string, string> = {
+  mage: 'Daño mágico a distancia. Fuego, escarcha y el Meteoro definitivo.',
+  warrior: 'Tanque. Aguanta al boss, provoca y protege a tu equipo.',
+  cleric: 'Sanadora. Cura, revive y castiga con luz sagrada.',
+  ranger: 'Daño físico ágil. Flechas rápidas, veneno y lluvia mortal.',
+};
+
+export interface LocalStats {
+  bossKills: number;
+  victories: number;
+  defeats: number;
+  goldEarned: number;
+  solEarned: number;
+}
+
+export function loadStats(): LocalStats {
+  try {
+    return { bossKills: 0, victories: 0, defeats: 0, goldEarned: 0, solEarned: 0, ...JSON.parse(localStorage.getItem('ac_stats') ?? '{}') };
+  } catch {
+    return { bossKills: 0, victories: 0, defeats: 0, goldEarned: 0, solEarned: 0 };
+  }
+}
+
+export function bumpStats(patch: Partial<LocalStats>): void {
+  const s = loadStats();
+  for (const [k, v] of Object.entries(patch)) {
+    (s as unknown as Record<string, number>)[k] += v as number;
+  }
+  localStorage.setItem('ac_stats', JSON.stringify(s));
 }
 
 const QUAD_POS = ['0% 0%', '100% 0%', '0% 100%', '100% 100%'];
@@ -57,7 +90,171 @@ export class Screens {
       case 'victory': this.buildVictory(screen, data as { reward: number; boss: BossDef }); break;
       case 'defeat': this.buildDefeat(screen, data as { consolation: number }); break;
       case 'runComplete': this.buildRunComplete(screen, data as { gold: number }); break;
+      case 'setup': this.buildSetup(screen, data!.game as Game, (data!.step as SetupStep) ?? 'nick'); break;
     }
+  }
+
+  // ================== onboarding (cinemática 3D detrás) ==================
+  private setupKeyHandler: ((e: KeyboardEvent) => void) | null = null;
+
+  private buildSetup(screen: HTMLElement, game: Game, step: SetupStep): void {
+    screen.classList.add('transparent');
+    game.setSetupStep(step);
+    if (this.setupKeyHandler) {
+      window.removeEventListener('keydown', this.setupKeyHandler);
+      this.setupKeyHandler = null;
+    }
+    if (step === 'nick') this.buildSetupNick(screen, game);
+    else if (step === 'avatar') this.buildSetupAvatar(screen, game);
+    else this.buildSetupReady(screen, game);
+  }
+
+  private buildSetupNick(screen: HTMLElement, game: Game): void {
+    const panel = document.createElement('div');
+    panel.className = 'setup-panel arc-panel setup-nick';
+    panel.innerHTML = `
+      <div class="setup-step">PASO 1 / 3</div>
+      <div class="screen-heading">Tu nombre de leyenda</div>
+      <div class="screen-sub">Así te verán tus compañeros en el Nexo</div>`;
+    const row = document.createElement('div');
+    row.className = 'nick-row';
+    const inp = document.createElement('input');
+    inp.className = 'nick-input';
+    inp.maxLength = 16;
+    inp.placeholder = 'Tu nickname…';
+    inp.value = game.nickname;
+    const play = this.btn('Jugar →', true, () => {
+      const v = inp.value.trim();
+      if (!v) { inp.focus(); return; }
+      game.setNickname(v);
+      this.show('setup', { game, step: 'avatar' });
+    });
+    inp.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') play.click();
+    });
+    row.appendChild(inp);
+    row.appendChild(play);
+    panel.appendChild(row);
+    screen.appendChild(panel);
+    setTimeout(() => inp.focus(), 300);
+  }
+
+  private buildSetupAvatar(screen: HTMLElement, game: Game): void {
+    const panel = document.createElement('div');
+    panel.className = 'setup-panel arc-panel setup-avatar';
+    screen.appendChild(panel);
+
+    const render = (): void => {
+      const hero = game.heroes[game.playerIndex];
+      const id = hero.def.id;
+      const kit = PLAYER_KITS[id];
+      const spellIcons = kit.map((s) =>
+        `<div class="av-spell" title="${s.name}" style="background-image:url(${this.img(`icons_${id}.jpg`)});background-position:${QUAD_POS[s.iconIndex ?? 0]}"></div>`).join('');
+      panel.innerHTML = `
+        <div class="setup-step">PASO 2 / 3</div>
+        <div class="screen-heading">Elige tu héroe</div>
+        <div class="avatar-row">
+          <button class="av-arrow" data-dir="-1">‹</button>
+          <div class="av-card">
+            <div class="av-portrait" style="background-image:url(${this.img('portraits_party.jpg')});background-position:${QUAD_POS[hero.def.portraitIndex]};border-color:${hex(hero.def.color)}"></div>
+            <div class="av-name" style="color:${hex(hero.def.color)}">${hero.def.name}</div>
+            <div class="av-role">${hero.def.role === 'dps' ? 'DPS' : hero.def.role === 'tank' ? 'TANQUE' : 'SANADORA'}</div>
+            <div class="av-desc">${CLASS_DESC[id]}</div>
+            <div class="av-spells">${spellIcons}</div>
+          </div>
+          <button class="av-arrow" data-dir="1">›</button>
+        </div>
+        <div class="av-dots">${game.heroes.map((_, i) => `<span class="${i === game.playerIndex ? 'on' : ''}"></span>`).join('')}</div>
+        <div class="setup-actions"></div>`;
+      panel.querySelectorAll('.av-arrow').forEach((b) => {
+        b.addEventListener('click', () => {
+          this.cb.playUi('ui_click');
+          game.cycleClass(parseInt((b as HTMLElement).dataset.dir!, 10));
+          render();
+        });
+      });
+      const actions = panel.querySelector('.setup-actions')!;
+      actions.appendChild(this.btn('Confirmar héroe', true, () => {
+        this.show('setup', { game, step: 'ready' });
+      }));
+    };
+    render();
+
+    this.setupKeyHandler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') { game.cycleClass(-1); render(); }
+      if (e.key === 'ArrowRight') { game.cycleClass(1); render(); }
+      if (e.key === 'Enter') this.show('setup', { game, step: 'ready' });
+    };
+    window.addEventListener('keydown', this.setupKeyHandler);
+  }
+
+  private buildSetupReady(screen: HTMLElement, game: Game): void {
+    const wrap = document.createElement('div');
+    wrap.className = 'ready-wrap';
+    screen.appendChild(wrap);
+
+    const panel = document.createElement('div');
+    panel.className = 'setup-panel arc-panel setup-ready';
+    panel.innerHTML = `
+      <div class="setup-step">PASO 3 / 3</div>
+      <div class="screen-heading">Grupo del Nexo</div>
+      <div class="ready-list"></div>
+      <div class="setup-actions"></div>`;
+    wrap.appendChild(panel);
+
+    const ready = [false, false, false, false];
+    const list = panel.querySelector('.ready-list')!;
+    const renderList = (): void => {
+      list.innerHTML = game.heroes.map((h, i) => `
+        <div class="ready-row ${ready[i] ? 'rdy' : ''}">
+          <div class="r-portrait" style="background-image:url(${this.img('portraits_party.jpg')});background-position:${QUAD_POS[h.def.portraitIndex]};border-color:${hex(h.def.color)}"></div>
+          <div class="r-info">
+            <div class="r-name" style="color:${hex(h.def.color)}">${h.isPlayer ? (game.nickname || h.def.name) : h.def.name}${h.isPlayer ? ' (TÚ)' : ''}</div>
+            <div class="r-class">${h.def.name} · ${h.def.role === 'dps' ? 'DPS' : h.def.role === 'tank' ? 'TANQUE' : 'SANADORA'}</div>
+          </div>
+          <div class="r-check">${ready[i] ? '✔ LISTO' : '…'}</div>
+        </div>`).join('');
+    };
+    renderList();
+
+    // leaderboard local
+    const stats = loadStats();
+    const lb = document.createElement('div');
+    lb.className = 'setup-panel arc-panel lb-panel';
+    lb.innerHTML = `
+      <div class="screen-heading" style="font-size:17px">Tu historial</div>
+      <div class="lb-grid">
+        <div class="lb-stat"><b>${stats.bossKills}</b><span>Bosses<br>matados</span></div>
+        <div class="lb-stat"><b>${stats.victories}</b><span>Nexos<br>purificados</span></div>
+        <div class="lb-stat"><b>${stats.goldEarned}</b><span>Oro<br>ganado</span></div>
+        <div class="lb-stat"><b>${stats.solEarned.toFixed(2)}</b><span>SOL<br>ganado</span></div>
+      </div>
+      <div class="lb-soon">Ranking global — próximamente con lobbies online</div>`;
+    wrap.appendChild(lb);
+
+    const actions = panel.querySelector('.setup-actions')!;
+    const readyBtn = this.btn('¡Listo para luchar!', true, () => {
+      const pIdx = game.playerIndex;
+      if (ready[pIdx]) return;
+      ready[pIdx] = true;
+      (readyBtn as HTMLButtonElement).disabled = true;
+      renderList();
+      // los compañeros IA confirman en cadena
+      const others = [0, 1, 2, 3].filter((i) => i !== pIdx);
+      others.forEach((idx, n) => {
+        setTimeout(() => {
+          ready[idx] = true;
+          this.cb.playUi('ui_join');
+          renderList();
+          if (ready.every(Boolean)) {
+            setTimeout(() => this.cb.onBattleStart(), 700);
+          }
+        }, 700 + n * 750);
+      });
+    });
+    actions.appendChild(readyBtn);
+    actions.appendChild(this.btn('Cambiar héroe', false, () => this.show('setup', { game, step: 'avatar' })));
   }
 
   private btn(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {

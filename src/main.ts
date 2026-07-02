@@ -59,7 +59,7 @@ let preloading: Promise<unknown> | null = null;
 screens.cb = {
   onTitleEnter: () => {
     audio.unlock();
-    // precarga modelos del primer combate mientras el jugador está en el lobby
+    // precarga modelos del primer combate mientras eliges nombre y héroe
     preloading ??= preloadModels([
       { key: 'hero_mage', rigged: true },
       { key: 'hero_warrior', rigged: true },
@@ -67,9 +67,14 @@ screens.cb = {
       { key: 'hero_ranger', rigged: true },
       { key: BOSSES[0].modelKey, rigged: true },
     ]);
-    game.enterLobby();
+    void preloading.then(() => {
+      void game.enterSetup('nick');
+      screens.show('setup', { game, step: 'nick' });
+    });
+    screens.show('loading');
   },
   onJoin: () => { void preloading?.then(() => game.joinMatch()); },
+  onBattleStart: () => { void preloading?.then(() => game.beginBattle()); },
   onVictoryContinue: () => game.toMarket(),
   onMarketBuy: (id) => game.buyUpgrade(id),
   onMarketContinue: () => { void game.nextBoss(); },

@@ -11,6 +11,13 @@ export class CameraRig {
   private distGoal = 26;
   private trauma = 0;
   private readonly tmp = new THREE.Vector3();
+  // modo cinemático (onboarding): posición/mirada explícitas con damping
+  private cinematic = false;
+  private readonly cinePos = new THREE.Vector3();
+  private readonly cineLook = new THREE.Vector3();
+  private readonly curPos = new THREE.Vector3();
+  private readonly curLook = new THREE.Vector3();
+  private cineSpeed = 2.2;
 
   constructor(camera: THREE.PerspectiveCamera) {
     this.camera = camera;
@@ -28,6 +35,33 @@ export class CameraRig {
   snapTo(pos: THREE.Vector3): void {
     this.target.copy(pos);
     this.lookTarget.copy(pos);
+  }
+
+  /** Activa modo cinemático: la cámara fluye hacia pos mirando a look. */
+  setCinematic(pos: THREE.Vector3, look: THREE.Vector3, speed = 2.2): void {
+    if (!this.cinematic) {
+      this.curPos.copy(this.camera.position);
+      this.curLook.copy(this.lookTarget);
+    }
+    this.cinematic = true;
+    this.cinePos.copy(pos);
+    this.cineLook.copy(look);
+    this.cineSpeed = speed;
+  }
+
+  clearCinematic(): void {
+    this.cinematic = false;
+  }
+
+  /** Update del modo cinemático (llamar en vez de update() durante onboarding). */
+  updateCinematic(dt: number): void {
+    if (!this.cinematic) return;
+    const k = 1 - Math.exp(-dt * this.cineSpeed);
+    this.curPos.lerp(this.cinePos, k);
+    this.curLook.lerp(this.cineLook, k);
+    this.camera.position.copy(this.curPos);
+    this.camera.lookAt(this.curLook);
+    this.camera.rotation.z = 0;
   }
 
   update(dt: number, focus: THREE.Vector3, aim: THREE.Vector3 | null, t: number): void {

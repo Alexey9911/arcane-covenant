@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CharacterVisual, createVisual, ModelSpec } from './models';
-import { ClassDef, SpellDef, PLAYER_SPELLS, HERO_SPEED, HERO_RADIUS, PLAY_RADIUS, BossDef } from '../game/balance';
+import { ClassDef, SpellDef, PLAYER_KITS, HERO_SPEED, HERO_RADIUS, PLAY_RADIUS, BossDef, MIN_SLOW_FACTOR } from '../game/balance';
 
 export interface DotEffect { dps: number; until: number; color: number; }
 
@@ -39,7 +39,8 @@ export class Unit {
   }
 
   applySlow(factor: number, duration: number, now: number): void {
-    this.slowFactor = factor;
+    // nunca congelar: cualquier slow deja a la unidad al menos al 80% de velocidad
+    this.slowFactor = Math.max(MIN_SLOW_FACTOR, factor);
     this.slowUntil = now + duration;
   }
 
@@ -128,14 +129,22 @@ export class Hero extends Unit {
   deadSince = 0;
   aiCooldowns = new Map<string, number>();
 
-  constructor(readonly def: ClassDef, readonly isPlayer: boolean) {
+  isPlayer: boolean;
+  nickname = '';
+
+  constructor(readonly def: ClassDef, isPlayer: boolean) {
     super(def.color);
+    this.isPlayer = isPlayer;
     this.maxHp = def.maxHp;
     this.hp = def.maxHp;
     this.maxMana = def.maxMana;
     this.mana = def.maxMana;
-    this.spells = this.def.id === 'mage' ? PLAYER_SPELLS : [];
+    this.spells = PLAYER_KITS[def.id];
     this.radius = HERO_RADIUS;
+  }
+
+  get displayName(): string {
+    return this.isPlayer && this.nickname ? this.nickname : this.def.name;
   }
 
   applyVitality(mult: number): void {
@@ -186,6 +195,9 @@ export class Boss extends Unit {
   summonReady = 0;
   sweepReady = 0;
   roarPlayed = false;
+  lungeReady = 0;
+  lungeUntil = 0;
+  readonly lungeDir = new THREE.Vector3();
 
   constructor(readonly def: BossDef) {
     super(def.accentColor);

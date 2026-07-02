@@ -61,7 +61,34 @@ export function updateCompanion(hero: Hero, game: Game, dt: number): void {
     case 'warrior': return warriorBrain(hero, game, dt);
     case 'cleric': return clericBrain(hero, game, dt);
     case 'ranger': return rangerBrain(hero, game, dt);
+    case 'mage': return mageBrain(hero, game, dt);
   }
+}
+
+function mageBrain(hero: Hero, game: Game, dt: number): void {
+  const now = game.now;
+  const boss = game.boss;
+  let speed01 = 0;
+  const target: Unit | null = game.adds.find((a) => a.alive) ?? (boss && boss.alive ? boss : null);
+  if (target) {
+    tmpV2.set(hero.pos.x - target.pos.x, 0, hero.pos.z - target.pos.z);
+    const d = tmpV2.length();
+    const ideal = 12;
+    if (d < ideal - 3) {
+      tmpV2.normalize();
+      tmpV.set(target.pos.x + tmpV2.x * ideal, 0, target.pos.z + tmpV2.z * ideal);
+      speed01 = steerTo(hero, tmpV, dt, now, 0.5);
+    } else if (d > ideal + 4) {
+      speed01 = steerTo(hero, target.pos, dt, now, ideal);
+    } else {
+      faceTarget(hero, target.pos);
+    }
+    if (now >= (hero.aiCooldowns.get('aifireball') ?? 0) && hero.mana >= AI_SPELLS.aifireball.manaCost) {
+      hero.aiCooldowns.set('aifireball', now + AI_SPELLS.aifireball.cooldown);
+      game.aiFireProjectile(hero, AI_SPELLS.aifireball, target);
+    }
+  }
+  hero.syncVisual(dt, game.time, speed01);
 }
 
 function warriorBrain(hero: Hero, game: Game, dt: number): void {
@@ -222,6 +249,22 @@ export function updateBossAI(boss: Boss, game: Game, dt: number): void {
   // aura de enrage
   if (boss.enraged) game.vfx.enrageAura(boss.pos, dt, boss.def.accentColor);
 
+  // embestida en curso: dash rápido con estela
+  if (now < boss.lungeUntil) {
+    const sp = boss.moveSpeed * 4.4 * speedMult;
+    boss.pos.x += boss.lungeDir.x * sp * dt;
+    boss.pos.z += boss.lungeDir.z * sp * dt;
+    boss.facing = Math.atan2(boss.lungeDir.z, boss.lungeDir.x);
+    boss.clampToArena(game.playRadius);
+    game.vfx.trail(boss.pos, boss.def.accentColor, dt, 220, 2.2);
+    boss.syncVisual(dt, game.time, 1);
+    if (now + dt >= boss.lungeUntil) {
+      game.vfx.shockwave(boss.pos, boss.def.accentColor, boss.radius * 2.2, 0.4);
+      game.camera.addTrauma(0.25);
+    }
+    return;
+  }
+
   // ocupado casteando un ataque especial
   if (now < boss.busyUntil) {
     boss.visual?.setCast(true);
@@ -281,6 +324,15 @@ export function updateBossAI(boss: Boss, game: Game, dt: number): void {
   tmpV2.set(target.pos.x - boss.pos.x, 0, target.pos.z - boss.pos.z);
   const d = tmpV2.length();
   let speed01 = 0;
+  // embestida: si el objetivo está lejos, cargar hacia él (más presencia y amenaza)
+  if (d > 8 && now >= boss.lungeReady) {
+    boss.lungeReady = now + 8 / speedMult;
+    boss.lungeUntil = now + Math.min(0.65, (d - boss.def.meleeRange) / (boss.moveSpeed * 4.4));
+    boss.lungeDir.set(tmpV2.x / d, 0, tmpV2.z / d);
+    game.audio.play('boss_cast_dark', { volume: 0.6, rate: 1.4 });
+    boss.syncVisual(dt, game.time, 1);
+    return;
+  }
   if (d > boss.def.meleeRange) {
     speed01 = steerTo(boss, target.pos, dt, now, boss.def.meleeRange * 0.9);
     speed01 *= speedMult;

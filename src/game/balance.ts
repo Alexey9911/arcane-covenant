@@ -50,37 +50,111 @@ export interface SpellDef {
   radius?: number;
   speed?: number;
   power: number; // daño o curación
+  count?: number; // proyectiles en abanico
   dot?: { dps: number; duration: number };
   slow?: { factor: number; duration: number };
   color: number;
   castSound?: string;
   impactSound?: string;
-  iconIndex?: number; // cuadrante en icons_mage.jpg (solo jugador)
+  iconIndex?: number; // cuadrante en icons_{clase}.jpg
 }
 
-// Kit del jugador (Pyra, maga de fuego)
-export const PLAYER_SPELLS: SpellDef[] = [
-  {
-    id: 'fireball', name: 'Bola de Fuego', kind: 'projectile', cooldown: 1.6, manaCost: 18,
-    castTime: 0, range: 26, radius: 1.6, speed: 26, power: 62, color: PAL.cls.mage,
-    castSound: 'fireball_cast', impactSound: 'fireball_impact', iconIndex: 0,
-  },
-  {
-    id: 'frostnova', name: 'Nova de Escarcha', kind: 'nova', cooldown: 9, manaCost: 40,
-    castTime: 0, range: 0, radius: 6.5, power: 48, slow: { factor: 0.45, duration: 3.5 },
-    color: 0x67e8f9, castSound: 'frost_nova', iconIndex: 1,
-  },
-  {
-    id: 'arcanebeam', name: 'Rayo Arcano', kind: 'beam', cooldown: 7, manaCost: 55,
-    castTime: 2.2, range: 18, radius: 0.8, power: 260, color: PAL.env.runeArcane,
-    castSound: 'arcane_beam', iconIndex: 2,
-  },
-  {
-    id: 'meteor', name: 'Meteoro', kind: 'groundAoe', cooldown: 38, manaCost: 90,
-    castTime: 1.0, range: 24, radius: 5.2, power: 340, color: 0xff9a3d,
-    castSound: 'meteor_incoming', impactSound: 'meteor_impact', iconIndex: 3,
-  },
-];
+// Kits jugables por clase (slot 1-4; iconos en icons_{clase}.jpg por cuadrante).
+// Nota de balance: los slows NUNCA congelan — factor mínimo 0.8 (el boss se
+// mueve al 80%), duraciones cortas. Sensación de impacto sin romper el ritmo.
+export const PLAYER_KITS: Record<ClassId, SpellDef[]> = {
+  mage: [
+    {
+      id: 'fireball', name: 'Bola de Fuego', kind: 'projectile', cooldown: 1.6, manaCost: 18,
+      castTime: 0, range: 26, radius: 1.6, speed: 26, power: 62, color: PAL.cls.mage,
+      castSound: 'fireball_cast', impactSound: 'fireball_impact', iconIndex: 0,
+    },
+    {
+      id: 'frostnova', name: 'Nova de Escarcha', kind: 'nova', cooldown: 9, manaCost: 40,
+      castTime: 0, range: 0, radius: 6.5, power: 48, slow: { factor: 0.8, duration: 2.5 },
+      color: 0x67e8f9, castSound: 'frost_nova', iconIndex: 1,
+    },
+    {
+      id: 'arcanebeam', name: 'Rayo Arcano', kind: 'beam', cooldown: 7, manaCost: 55,
+      castTime: 2.2, range: 18, radius: 0.8, power: 260, color: PAL.env.runeArcane,
+      castSound: 'arcane_beam', iconIndex: 2,
+    },
+    {
+      id: 'meteor', name: 'Meteoro', kind: 'groundAoe', cooldown: 38, manaCost: 90,
+      castTime: 1.0, range: 24, radius: 5.2, power: 340, color: 0xff9a3d,
+      castSound: 'meteor_incoming', impactSound: 'meteor_impact', iconIndex: 3,
+    },
+  ],
+  warrior: [
+    {
+      id: 'shieldbash', name: 'Golpe de Escudo', kind: 'melee', cooldown: 4, manaCost: 12,
+      castTime: 0, range: 3.4, radius: 2.2, power: 78, color: PAL.cls.warrior,
+      castSound: 'shield_slam', iconIndex: 0,
+    },
+    {
+      id: 'taunt', name: 'Provocación', kind: 'taunt', cooldown: 12, manaCost: 20,
+      castTime: 0, range: 20, power: 0, color: PAL.cls.warrior,
+      castSound: 'warrior_taunt', iconIndex: 1,
+    },
+    {
+      id: 'steelwall', name: 'Muro de Acero', kind: 'buff', cooldown: 18, manaCost: 30,
+      castTime: 0, range: 0, power: 0.55, color: PAL.ui.shield,
+      castSound: 'shield_slam', iconIndex: 2,
+    },
+    {
+      id: 'earthquake', name: 'Terremoto', kind: 'nova', cooldown: 34, manaCost: 80,
+      castTime: 0, range: 0, radius: 7.5, power: 250, slow: { factor: 0.82, duration: 2 },
+      color: PAL.cls.warrior, castSound: 'boss_slam', iconIndex: 3,
+    },
+  ],
+  cleric: [
+    {
+      id: 'smitep', name: 'Castigo', kind: 'projectile', cooldown: 1.8, manaCost: 12,
+      castTime: 0, range: 22, radius: 1.0, speed: 25, power: 46, color: PAL.cls.cleric,
+      castSound: 'heal_cast', impactSound: 'holy_nova', iconIndex: 0,
+    },
+    {
+      id: 'healflash', name: 'Destello Curativo', kind: 'heal', cooldown: 4, manaCost: 30,
+      castTime: 1.0, range: 16, power: 165, color: PAL.cls.cleric,
+      castSound: 'heal_cast', iconIndex: 1,
+    },
+    {
+      id: 'holynova', name: 'Nova Sagrada', kind: 'groupHeal', cooldown: 15, manaCost: 70,
+      castTime: 1.2, range: 0, radius: 10, power: 135, color: PAL.cls.cleric,
+      castSound: 'holy_nova', iconIndex: 2,
+    },
+    {
+      id: 'judgement', name: 'Juicio', kind: 'beam', cooldown: 30, manaCost: 85,
+      castTime: 2.2, range: 17, radius: 0.9, power: 380, color: 0xffe9a3,
+      castSound: 'arcane_beam', iconIndex: 3,
+    },
+  ],
+  ranger: [
+    {
+      id: 'swiftarrow', name: 'Flecha Rápida', kind: 'projectile', cooldown: 0.9, manaCost: 6,
+      castTime: 0, range: 26, radius: 0.8, speed: 34, power: 38, color: PAL.cls.ranger,
+      castSound: 'arrow_shot', iconIndex: 0,
+    },
+    {
+      id: 'poisonarrow', name: 'Flecha Venenosa', kind: 'projectile', cooldown: 7, manaCost: 24,
+      castTime: 0, range: 26, radius: 0.9, speed: 30, power: 34, dot: { dps: 22, duration: 6 },
+      color: PAL.cls.ranger, castSound: 'arrow_shot', impactSound: 'poison_hit', iconIndex: 1,
+    },
+    {
+      id: 'multishotp', name: 'Descarga Múltiple', kind: 'projectile', cooldown: 9, manaCost: 32,
+      castTime: 0, range: 22, radius: 0.8, speed: 30, power: 30, count: 5,
+      color: PAL.cls.ranger, castSound: 'arrow_shot', iconIndex: 2,
+    },
+    {
+      id: 'arrowrain', name: 'Lluvia de Flechas', kind: 'groundAoe', cooldown: 30, manaCost: 75,
+      castTime: 0.9, range: 24, radius: 4.8, power: 240, dot: { dps: 20, duration: 3 },
+      color: PAL.cls.ranger, castSound: 'arrow_shot', impactSound: 'poison_hit', iconIndex: 3,
+    },
+  ],
+};
+
+// compat: kit por defecto (maga)
+export const PLAYER_SPELLS: SpellDef[] = PLAYER_KITS.mage;
 
 // Kits de la IA (usados por los cerebros de compañeros)
 export const AI_SPELLS: Record<string, SpellDef> = {
@@ -91,6 +165,7 @@ export const AI_SPELLS: Record<string, SpellDef> = {
   groupheal: { id: 'groupheal', name: 'Nova Sagrada', kind: 'groupHeal', cooldown: 16, manaCost: 70, castTime: 1.6, range: 0, radius: 10, power: 120, color: PAL.cls.cleric, castSound: 'holy_nova' },
   smite: { id: 'smite', name: 'Castigo', kind: 'projectile', cooldown: 2.4, manaCost: 10, castTime: 0, range: 14, radius: 0.9, speed: 22, power: 26, color: PAL.cls.cleric, castSound: 'heal_cast' },
   arrow: { id: 'arrow', name: 'Flecha Rápida', kind: 'projectile', cooldown: 1.1, manaCost: 6, castTime: 0, range: 24, radius: 0.7, speed: 34, power: 34, color: PAL.cls.ranger, castSound: 'arrow_shot' },
+  aifireball: { id: 'aifireball', name: 'Bola de Fuego', kind: 'projectile', cooldown: 2.0, manaCost: 14, castTime: 0, range: 24, radius: 1.3, speed: 26, power: 48, color: PAL.cls.mage, castSound: 'fireball_cast', impactSound: 'fireball_impact' },
   poison: { id: 'poison', name: 'Flecha Venenosa', kind: 'projectile', cooldown: 8, manaCost: 25, castTime: 0, range: 24, radius: 0.8, speed: 30, power: 30, dot: { dps: 18, duration: 6 }, color: PAL.cls.ranger, castSound: 'arrow_shot', impactSound: 'poison_hit' },
   multishot: { id: 'multishot', name: 'Descarga Múltiple', kind: 'projectile', cooldown: 10, manaCost: 35, castTime: 0, range: 20, radius: 0.7, speed: 30, power: 26, color: PAL.cls.ranger, castSound: 'arrow_shot' },
 };
@@ -162,7 +237,7 @@ export const BOSSES: BossDef[] = [
     maxHp: 11800, meleeDamage: 70, meleeInterval: 2.2, meleeRange: 3.0, moveSpeed: 3.0,
     scale: 2.2, radius: 1.5, phases: [0.6, 0.3], enrageAt: 0.15,
     attacks: [
-      { id: 'frostzone', name: 'Suelo Gélido', shape: 'circle', radius: 4.2, telegraphTime: 1.5, damage: 60, target: 'random', count: 2, interval: 0.4, cooldown: 11, weight: 3, persistDps: 45, persistTime: 7, slow: { factor: 0.5, duration: 1.2 }, sound: 'boss_cast_dark', resolveSound: 'frost_nova' },
+      { id: 'frostzone', name: 'Suelo Gélido', shape: 'circle', radius: 4.2, telegraphTime: 1.5, damage: 60, target: 'random', count: 2, interval: 0.4, cooldown: 11, weight: 3, persistDps: 45, persistTime: 7, slow: { factor: 0.8, duration: 1.0 }, sound: 'boss_cast_dark', resolveSound: 'frost_nova' },
       { id: 'voidbarrage', name: 'Andanada del Vacío', shape: 'circle', radius: 2.6, telegraphTime: 1.3, damage: 110, target: 'players', count: 4, interval: 0.22, cooldown: 13, weight: 2, minPhase: 1, sound: 'boss_cast_dark', resolveSound: 'fireball_impact' },
       { id: 'voidring', name: 'Colapso del Vacío', shape: 'ring', radius: 9.5, inner: 3.2, telegraphTime: 2.1, damage: 165, target: 'self', cooldown: 16, weight: 2, minPhase: 2, sound: 'boss_cast_dark', resolveSound: 'boss_slam' },
     ],
@@ -185,6 +260,39 @@ export const BOSSES: BossDef[] = [
 
 // Adds invocados
 export const ADD_RADIUS = 0.5;
+
+// El boss se cura al matar a un héroe (desafío extra, notorio pero no letal)
+export const BOSS_HEAL_ON_KILL = 0.08; // 8% de su vida máxima
+
+// Slow mínimo sobre CUALQUIER unidad: nunca por debajo del 80% de velocidad
+export const MIN_SLOW_FACTOR = 0.8;
+
+// ------------------------------------------------------------ diálogos boss
+// El texto debe coincidir con los audios generados en public/audio/voice/
+export type DialogueKey = 'intro' | 'phase' | 'enrage' | 'kill' | 'death';
+export const BOSS_DIALOGUE: Record<string, Record<DialogueKey, string>> = {
+  golem: {
+    intro: '¿Quién osa profanar mi arena? ¡Os convertiré en ceniza!',
+    phase: '¡La montaña despierta! ¡Sentid su furia!',
+    enrage: '¡Arderéis! ¡Todos arderéis!',
+    kill: 'Cenizas. Solo quedan cenizas.',
+    death: 'Imposible... la piedra... se quiebra...',
+  },
+  lich: {
+    intro: 'Vuestras almas ya me pertenecen, mortales.',
+    phase: 'El vacío os devora... lentamente.',
+    enrage: '¡La eternidad os reclama!',
+    kill: 'Qué frágil. Qué inútil.',
+    death: 'El vacío... me llama... a mí...',
+  },
+  demon: {
+    intro: '¡Bienvenidos a vuestro infierno personal!',
+    phase: '¡Este reino arde con mi ira!',
+    enrage: '¡Sangre! ¡Fuego! ¡Muerte!',
+    kill: '¡Patético! ¿Quién sigue?',
+    death: 'No... yo soy... eterno...',
+  },
+};
 
 // ----------------------------------------------------------------- economía
 export const GOLD_PER_BOSS = [140, 200, 300];

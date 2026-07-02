@@ -10,15 +10,22 @@ import { Hero, Boss, Add, ProjectilePool, Unit } from '../entities/units';
 import { updateCompanion, updateBossAI, updateAdds, steerTo } from './ai';
 import type { Hud } from '../ui/hud';
 import type { Screens } from '../ui/screens';
+import { bumpStats } from '../ui/screens';
 import {
-  CLASSES, PLAYER_SPELLS, BOSSES, SpellDef, BossAttackDef, BossDef,
-  HERO_SPEED, PLAY_RADIUS, REVIVE_TIME, REVIVE_RANGE, REVIVE_HP_FRACTION,
+  CLASSES, BOSSES, SpellDef, BossAttackDef, BossDef,
+  PLAY_RADIUS, REVIVE_TIME, REVIVE_RANGE, REVIVE_HP_FRACTION,
   GOLD_PER_BOSS, GOLD_DEFEAT_CONSOLATION, UPGRADES, upgradeCost, ClassId,
+  BOSS_DIALOGUE, BOSS_HEAL_ON_KILL, DialogueKey,
 } from './balance';
 import { PAL } from './palette';
+import type { ReticleHandle } from '../vfx/vfx';
 
 export type GameFlowState =
-  | 'title' | 'lobby' | 'loading' | 'intro' | 'combat' | 'victory' | 'market' | 'defeat' | 'runComplete';
+  | 'title' | 'setup' | 'lobby' | 'loading' | 'intro' | 'combat' | 'victory' | 'market' | 'defeat' | 'runComplete';
+
+export type SetupStep = 'nick' | 'avatar' | 'ready';
+
+const CLASS_ORDER: ClassId[] = ['mage', 'warrior', 'cleric', 'ranger'];
 
 interface PendingStrike {
   handle: TelegraphHandle;
@@ -83,6 +90,13 @@ export class Game {
   private introT = 0;
   private ambience: { stop(): void } | null = null;
   private playerBeam: BeamHandle | null = null;
+  // selección de personaje / onboarding
+  playerIndex = 0;
+  nickname = localStorage.getItem('ac_nick') ?? '';
+  setupStep: SetupStep = 'nick';
+  private selectRing: THREE.Mesh | null = null;
+  private reticle: ReticleHandle | null = null;
+  private deathPulseT = 0;
   private beamTickAcc = 0;
   private raycaster = new THREE.Raycaster();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -106,7 +120,7 @@ export class Game {
     this.createHeroes();
   }
 
-  get player(): Hero { return this.heroes[0]; }
+  get player(): Hero { return this.heroes[this.playerIndex]; }
   get partyDamageMult(): number { return 1 + this.upgrades.damage * 0.12; }
   get cooldownMult(): number { return Math.max(0.55, 1 - this.upgrades.cdr * 0.08); }
   get vitalityMult(): number { return 1 + this.upgrades.vitality * 0.15; }
@@ -128,6 +142,121 @@ export class Game {
     this.state = 'lobby';
     this.hud.setVisible(false);
     this.screens.show('lobby');
+  }
+
+  // ----------------------------------------------------- onboarding / setup
+  /** Escenifica la arena para el onboarding: héroes en fila + boss al fondo. */
+  async enterSetup(step: SetupStep): Promise<void> {
+    this.clearBattlefield();
+    this.engine.setDeathFx(0);
+    this.hud.setVisible(false);
+    this.state = 'setup';
+    this.setupStep = step;
+
+    // héroes en fila mirando a cámara (sur)
+    this.heroes.forEach((h, i) => {
+      h.revive(1);
+      h.pos.set((i - 1.5) * 3.4, 0, 10.5);
+      h.facing = Math.PI / 2; // hacia +z (cámara)
+      h.group.visible = true;
+      h.cancelCast();
+      h.syncVisual(0.016, this.time, 0);
+    });
+
+    // boss de la ronda actual al fondo, de atrezzo
+    const def = BOSSES[this.bossIndex];
+    const boss = new Boss(def);
+    boss.pos.set(0, 0, -9);
+    boss.facing = Math.PI / 2;
+    this.engine.scene.add(boss.group);
+    this.boss = boss;
+    void boss.loadVisual({
+      key: def.modelKey, height: def.scale * 1.9, accent: def.accentColor,
+      rigged: def.modelKey !== 'boss_lich',
+    }).then(() => boss.syncVisual(0.016, this.time, 0));
+
+    // anillo de selección (runas giratorias)
+    if (!this.selectRing) {
+      const mat = new THREE.MeshBasicMaterial({
+        map: this.mats.runeTex, color: 0xffffff, transparent: true, opacity: 0.9,
+        blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+      });
+      this.selectRing = new THREE.Mesh(new THREE.CircleGeometry(1.45, 48), mat);
+      this.selectRing.rotation.x = -Math.PI / 2;
+      this.selectRing.position.y = 0.06;
+      this.selectRing.renderOrder = 3;
+      this.engine.scene.add(this.selectRing);
+    }
+    this.selectRing.visible = false;
+    if (!this.ambience) this.ambience = this.audio.loop('ambience_arena', { group: 'amb', volume: 0.8, fadeIn: 1.5 });
+  }
+
+  setSetupStep(step: SetupStep): void {
+    this.setupStep = step;
+    if (this.selectRing) this.selectRing.visible = step === 'avatar';
+  }
+
+  cycleClass(dir: number): ClassId {
+    this.playerIndex = (this.playerIndex + dir + 4) % 4;
+    this.heroes.forEach((h, i) => { h.isPlayer = i === this.playerIndex; });
+    this.audio.play('ui_hover', { group: 'ui' });
+    return this.heroes[this.playerIndex].def.id;
+  }
+
+  setNickname(nick: string): void {
+    this.nickname = nick.slice(0, 16);
+    localStorage.setItem('ac_nick', this.nickname);
+    this.heroes.forEach((h) => { h.nickname = h.isPlayer ? this.nickname : ''; });
+  }
+
+  /** Todos listos: a la arena. */
+  async beginBattle(): Promise<void> {
+    this.audio.play('ui_join', { group: 'ui' });
+    this.camera.clearCinematic();
+    this.state = 'loading';
+    this.screens.show('loading');
+    await this.startMatch(this.bossIndex);
+  }
+
+  private updateSetup(dt: number): void {
+    const t = this.time;
+    for (const h of this.heroes) h.syncVisual(dt, t, 0);
+    if (this.boss) this.boss.syncVisual(dt, t, 0);
+
+    const sel = this.heroes[this.playerIndex];
+    if (this.setupStep === 'nick') {
+      // órbita lenta mostrando el campo de batalla completo
+      const a = t * 0.07;
+      this.camera.setCinematic(
+        new THREE.Vector3(Math.sin(a) * 30, 14, Math.cos(a) * 30),
+        new THREE.Vector3(0, 1.2, 0), 1.6,
+      );
+    } else if (this.setupStep === 'avatar') {
+      // plano cercano frente al héroe seleccionado
+      this.camera.setCinematic(
+        new THREE.Vector3(sel.pos.x * 0.85, 2.6, sel.pos.z + 6.8),
+        new THREE.Vector3(sel.pos.x, 1.15, sel.pos.z), 3.2,
+      );
+      if (this.selectRing) {
+        this.selectRing.visible = true;
+        this.selectRing.position.x += (sel.pos.x - this.selectRing.position.x) * (1 - Math.exp(-dt * 9));
+        this.selectRing.position.z = sel.pos.z;
+        this.selectRing.rotation.z = t * 0.5;
+        const mat = this.selectRing.material as THREE.MeshBasicMaterial;
+        mat.color.setHex(sel.def.color);
+        mat.opacity = 0.65 + Math.sin(t * 3.5) * 0.25;
+        // motas ascendiendo alrededor del elegido
+        this.vfx.reviveChannel(sel.pos, dt * 0.7);
+      }
+    } else {
+      // ready: plano general del equipo con el boss al fondo
+      this.camera.setCinematic(
+        new THREE.Vector3(0, 7.5, 21.5),
+        new THREE.Vector3(0, 1.6, -2), 2.0,
+      );
+      if (this.selectRing) this.selectRing.visible = false;
+    }
+    this.camera.updateCinematic(dt);
   }
 
   async joinMatch(): Promise<void> {
@@ -172,6 +301,14 @@ export class Game {
     boss.syncVisual(0.016, this.time, 0);
     this.boss = boss;
 
+    // nickname + reticle de puntería del color de la clase elegida
+    this.heroes.forEach((h) => { h.nickname = h.isPlayer ? this.nickname : ''; });
+    if (!this.reticle) this.reticle = this.vfx.reticle(this.player.def.color);
+    this.reticle.setColor(this.player.def.color);
+    this.reticle.setVisible(true);
+    if (this.selectRing) this.selectRing.visible = false;
+
+    this.camera.clearCinematic();
     this.camera.snapTo(this.player.pos);
     this.screens.show(null);
     this.hud.setVisible(true);
@@ -180,6 +317,17 @@ export class Game {
     this.introT = 0;
     if (!this.ambience) this.ambience = this.audio.loop('ambience_arena', { group: 'amb', volume: 0.8, fadeIn: 1.5 });
     this.hud.banner(`${def.name}`, def.title);
+  }
+
+  // ------------------------------------------------------------- diálogos
+  bossSpeak(key: DialogueKey): void {
+    const boss = this.boss;
+    if (!boss) return;
+    const text = BOSS_DIALOGUE[boss.def.id]?.[key];
+    if (!text) return;
+    const dur = this.audio.play(`voice/${boss.def.id}_${key}` as never, { volume: 1, throttleMs: 500 }) || 2.8;
+    this.audio.muteBossUntil = performance.now() + (dur + 0.4) * 1000;
+    this.hud.bossDialogue(boss.def.name, text, dur + 1.0, boss.def.portrait);
   }
 
   private clearBattlefield(): void {
@@ -204,6 +352,9 @@ export class Game {
       this.boss = null;
     }
     this.env.setThreat(0);
+    this.engine.setDeathFx(0);
+    this.reticle?.setVisible(false);
+    this.hud.updateDeathUI(null, null, null);
     this.hud.prompt(null);
   }
 
@@ -213,8 +364,11 @@ export class Game {
     this.state = 'victory';
     this.audio.play('victory_stinger', { volume: 0.9 });
     this.clearBattlefieldSoft();
+    const isRunComplete = this.bossIndex >= BOSSES.length - 1;
+    bumpStats({ bossKills: 1, goldEarned: reward, victories: isRunComplete ? 1 : 0 });
+    this.hud.chatSystem(`⚔ ${BOSSES[this.bossIndex].name} derrotado (+${reward} oro)`);
     setTimeout(() => {
-      if (this.bossIndex >= BOSSES.length - 1) {
+      if (isRunComplete) {
         this.screens.show('runComplete', { gold: this.gold });
       } else {
         this.screens.show('victory', { reward, boss: BOSSES[this.bossIndex] });
@@ -244,6 +398,8 @@ export class Game {
     this.state = 'defeat';
     this.gold += GOLD_DEFEAT_CONSOLATION;
     this.audio.play('defeat_stinger', { volume: 0.9 });
+    this.engine.setDeathFx(0.6);
+    bumpStats({ defeats: 1, goldEarned: GOLD_DEFEAT_CONSOLATION });
     setTimeout(() => {
       this.screens.show('defeat', { consolation: GOLD_DEFEAT_CONSOLATION });
     }, 1800);
@@ -278,16 +434,16 @@ export class Game {
     await this.startMatch(this.bossIndex);
   }
 
-  /** Tras derrota o run completa: al lobby (la run se reinicia, mejoras persisten). */
+  /** Tras derrota o run completa: al setup (elegir avatar), la run se reinicia. */
   backToLobby(fullReset = false): void {
     this.clearBattlefield();
-    this.heroes.forEach((h) => { h.group.visible = false; });
     this.bossIndex = 0;
     if (fullReset) {
       this.gold = 0;
       this.upgrades = { damage: 0, cdr: 0, vitality: 0, revive: 0 };
     }
-    this.enterLobby();
+    void this.enterSetup('avatar');
+    this.screens.show('setup', { game: this, step: 'avatar' });
   }
 
   // ================================================================= update
@@ -296,6 +452,7 @@ export class Game {
     this.now = t;
 
     switch (this.state) {
+      case 'setup': this.updateSetup(dt); break;
       case 'intro': this.updateIntro(dt); break;
       case 'combat': this.updateCombat(dt); break;
       case 'victory':
@@ -320,6 +477,7 @@ export class Game {
         this.audio.play('boss_roar', { volume: 1 });
         this.camera.addTrauma(0.55);
         this.vfx.shockwave(boss.pos, boss.def.accentColor, 8, 0.9);
+        setTimeout(() => this.bossSpeak('intro'), 900);
       }
       this.camera.update(dt, boss.pos, null, this.time);
     }
@@ -364,6 +522,23 @@ export class Game {
     // luz de amenaza sigue al boss en enrage
     if (this.boss?.enraged) this.env.setThreat(0.7 + Math.sin(this.time * 6) * 0.2, this.boss.pos);
 
+    // --- UX de muerte del jugador: mundo en B/N + pulso dorado + guía ---
+    const playerDead = !this.player.alive;
+    this.engine.setDeathFx(playerDead ? 1 : 0);
+    if (playerDead) {
+      this.deathPulseT -= dt;
+      if (this.deathPulseT <= 0) {
+        this.deathPulseT = 1.15;
+        this.vfx.shockwave(this.player.pos, 0xffe9a3, 3.8, 1.0);
+        this.vfx.flashLight(this.player.pos, 0xffe9a3, 34, 0.6);
+      }
+      const reviver = this.heroes.find((h) => h.alive && h.reviveTargetId === this.player.id);
+      const remaining = reviver ? Math.max(0, (1 - reviver.reviveProgress) * this.reviveTime) : null;
+      this.hud.updateDeathUI(this.player.pos, reviver ? reviver.displayName : null, remaining);
+    } else {
+      this.hud.updateDeathUI(null, null, null);
+    }
+
     // HUD
     this.hud.updateCombat(this, dt);
 
@@ -387,6 +562,11 @@ export class Game {
     this.raycaster.setFromCamera(this.input.mouseNdc, this.engine.camera);
     const hit = this.raycaster.ray.intersectPlane(this.groundPlane, this.tmp);
     if (hit) this.input.aimPoint.copy(hit);
+    // reticle: dónde caerá el hechizo
+    if (this.reticle) {
+      this.reticle.setVisible(this.state === 'combat' && this.player.alive);
+      this.reticle.setPos(this.input.aimPoint);
+    }
   }
 
   private updatePlayer(dt: number): void {
@@ -419,7 +599,7 @@ export class Game {
 
     // procesar casts pedidos
     for (const slot of this.input.consumeSlots()) {
-      const spell = PLAYER_SPELLS[slot];
+      const spell = p.spells[slot];
       if (!spell) continue;
       this.tryPlayerCast(spell);
     }
@@ -480,14 +660,14 @@ export class Game {
         this.audio.play(spell.castSound as never, { volume: 0.85 });
         this.playerBeam = this.vfx.beam(spell.color, 0.55);
         this.beamTickAcc = 0;
-      } else if (spell.id === 'meteor') {
-        this.audio.play('meteor_incoming', { volume: 0.9 });
-        // telegraph propio del meteoro (naranja, no rojo enemigo)
-        const h = this.vfx.telegraph('circle', p.castAim, spell.radius ?? 5, { color: 0xff9a3d });
+      } else if (spell.kind === 'groundAoe') {
+        this.audio.play((spell.castSound ?? 'meteor_incoming') as never, { volume: 0.9 });
+        // telegraph propio del AoE (color del hechizo, no rojo enemigo)
+        const h = this.vfx.telegraph('circle', p.castAim, spell.radius ?? 5, { color: spell.color });
         this.strikes.push({
           handle: h, t: -spell.castTime, dur: 0.9, shape: 'circle',
           pos: p.castAim.clone(), radius: spell.radius ?? 5, inner: 0, angle: 0, dir: 0,
-          damage: 0, color: 0xff9a3d, resolveSound: undefined,
+          damage: 0, color: spell.color, resolveSound: undefined,
         });
       }
     } else {
@@ -527,13 +707,24 @@ export class Game {
       case 'projectile': {
         this.audio.play(spell.castSound as never, { volume: 0.9 });
         this.vfx.castSparks(this.tmp.set(p.pos.x, p.castHeight, p.pos.z), spell.color);
-        this.tmp2.copy(p.castAim).sub(p.pos);
-        this.tmp2.y = 0;
-        this.projectiles.fire({
-          from: this.tmp.set(p.pos.x, p.castHeight, p.pos.z),
-          dir: this.tmp2, speed: spell.speed ?? 24, radius: spell.radius ?? 1.2,
-          damage: dmg, fromHero: true, color: spell.color, spell, scale: 1.25,
-        });
+        const n = spell.count ?? 1;
+        for (let i = 0; i < n; i++) {
+          this.tmp2.copy(p.castAim).sub(p.pos);
+          this.tmp2.y = 0;
+          this.tmp2.normalize();
+          if (n > 1) {
+            const a = (i - (n - 1) / 2) * 0.14;
+            const cos = Math.cos(a), sin = Math.sin(a);
+            const x = this.tmp2.x * cos - this.tmp2.z * sin;
+            const z = this.tmp2.x * sin + this.tmp2.z * cos;
+            this.tmp2.set(x, 0, z);
+          }
+          this.projectiles.fire({
+            from: this.tmp.set(p.pos.x, p.castHeight, p.pos.z),
+            dir: this.tmp2.clone(), speed: spell.speed ?? 24, radius: spell.radius ?? 1.2,
+            damage: dmg, fromHero: true, color: spell.color, spell, scale: n > 1 ? 0.9 : 1.25,
+          });
+        }
         break;
       }
       case 'nova': {
@@ -544,13 +735,71 @@ export class Game {
         break;
       }
       case 'groundAoe': {
-        // meteoro: el impacto llega al final del telegraph propio
         const target = p.castAim.clone();
         this.vfx.bigImpact(target, spell.color, spell.radius ?? 5);
-        this.audio.play('meteor_impact', { volume: 1 });
+        this.audio.play((spell.impactSound ?? 'meteor_impact') as never, { volume: 1 });
         this.camera.addTrauma(0.75);
         this.engine.pulseChroma(0.8);
         this.damageEnemiesInCircle(target, spell.radius ?? 5, dmg, spell);
+        break;
+      }
+      case 'melee': {
+        this.audio.play((spell.castSound ?? 'shield_slam') as never, { volume: 0.9 });
+        this.vfx.shockwave(p.pos, spell.color, spell.range, 0.35);
+        const targets: Unit[] = [];
+        if (this.boss?.alive) targets.push(this.boss);
+        for (const a of this.adds) if (a.alive) targets.push(a);
+        for (const u of targets) {
+          const d = Math.hypot(u.pos.x - p.pos.x, u.pos.z - p.pos.z);
+          if (d > spell.range + u.radius) continue;
+          let diff = Math.atan2(u.pos.z - p.pos.z, u.pos.x - p.pos.x) - p.facing;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          if (Math.abs(diff) < Math.PI / 2) {
+            this.vfx.impact(this.tmp.set(u.pos.x, u.castHeight * 0.6, u.pos.z), spell.color, 1);
+            this.damageEnemy(u, dmg, spell.color);
+          }
+        }
+        this.camera.addTrauma(0.18);
+        break;
+      }
+      case 'taunt': {
+        this.applyTaunt(p);
+        p.mitigation = Math.max(p.mitigation, 0.3);
+        p.mitigationUntil = this.now + 3;
+        break;
+      }
+      case 'buff': {
+        p.mitigation = spell.power;
+        p.mitigationUntil = this.now + 5;
+        this.audio.play((spell.castSound ?? 'shield_slam') as never, { volume: 0.8 });
+        this.vfx.nova(p.pos, spell.color, 2.4);
+        break;
+      }
+      case 'heal': {
+        // smart-cast: el aliado vivo con menos vida (incluyéndote) dentro de rango
+        const target = this.heroes
+          .filter((h) => h.alive && Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z) <= spell.range)
+          .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0] ?? p;
+        const healed = target.heal(spell.power);
+        this.audio.play((spell.castSound ?? 'heal_cast') as never, { volume: 0.85 });
+        this.vfx.healBurst(target.pos);
+        if (healed > 0) {
+          this.hud.combatText(this.tmp.set(target.pos.x, target.headHeight, target.pos.z), `+${Math.round(healed)}`, '#7dff8a', false);
+        }
+        break;
+      }
+      case 'groupHeal': {
+        this.audio.play((spell.castSound ?? 'holy_nova') as never, { volume: 0.9 });
+        this.vfx.nova(p.pos, spell.color, spell.radius ?? 10);
+        for (const h of this.heroes) {
+          if (!h.alive) continue;
+          const d = Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z);
+          if (d <= (spell.radius ?? 10)) {
+            const healed = h.heal(spell.power);
+            if (healed > 0) this.hud.combatText(this.tmp.set(h.pos.x, h.headHeight, h.pos.z), `+${Math.round(healed)}`, '#7dff8a', false);
+          }
+        }
         break;
       }
       default: break;
@@ -626,8 +875,7 @@ export class Game {
       const d = Math.hypot(u.pos.x - center.x, u.pos.z - center.z);
       if (d <= radius + u.radius) {
         this.damageEnemy(u, damage, spell.color);
-        if (spell.slow && u === this.boss) u.applySlow(Math.min(0.75, spell.slow.factor + 0.3), spell.slow.duration, this.now);
-        else if (spell.slow) u.applySlow(spell.slow.factor, spell.slow.duration, this.now);
+        if (spell.slow) u.applySlow(spell.slow.factor, spell.slow.duration, this.now);
         if (spell.dot) u.applyDot(spell.dot.dps * this.partyDamageMult, spell.dot.duration, spell.color, this.now);
       }
     }
@@ -637,10 +885,10 @@ export class Game {
     const boss = this.boss!;
     this.vfx.bigImpact(boss.pos, boss.def.accentColor, 6);
     this.vfx.deathBurst(boss.pos, boss.def.accentColor);
-    this.audio.play('boss_roar', { volume: 0.9, rate: 0.8 });
     this.camera.addTrauma(0.9);
     this.engine.pulseChroma(1);
     this.hud.banner('¡VICTORIA!', `${boss.def.name} ha caído`);
+    this.bossSpeak('death');
   }
 
   // ===================================================== daño a héroes
@@ -672,8 +920,22 @@ export class Game {
     // anillo dorado de cuerpo revivible
     const ring = this.vfx.zone(hero.pos, 1.3, 0xffe9a3);
     this.corpseRings.set(hero.id, ring);
-    this.hud.banner(`${hero.def.name} ha caído`, hero.isPlayer ? '' : 'Mantén E junto al cuerpo para revivir');
+    // si el muerto eres tú, la guía de muerte (HAS CAÍDO) ya lo comunica
+    if (!hero.isPlayer) this.hud.banner(`${hero.displayName} ha caído`, 'Mantén E junto al cuerpo para revivir');
+    this.hud.chatSystem(`☠ ${hero.displayName} ha caído`);
     if (this.boss?.aggroTargetId === hero.id) this.boss.aggroTargetId = 0;
+    // el boss devora el alma: recupera vida (desafío extra) y se burla
+    if (this.boss?.alive) {
+      const healed = this.boss.heal(this.boss.maxHp * BOSS_HEAL_ON_KILL);
+      if (healed > 0) {
+        this.hud.combatText(
+          this.tmp.set(this.boss.pos.x, this.boss.headHeight, this.boss.pos.z),
+          `+${Math.round(healed)}`, '#ff8a3d', true,
+        );
+        this.vfx.healBurst(this.boss.pos, this.boss.def.accentColor);
+      }
+      this.bossSpeak('kill');
+    }
   }
 
   // ============================================================== revive
@@ -1091,6 +1353,7 @@ export class Game {
     this.engine.pulseChroma(0.5);
     this.vfx.nova(boss.pos, boss.def.accentColor, 7);
     this.hud.banner(`Fase ${phase + 1}`, boss.def.name);
+    this.bossSpeak('phase');
   }
 
   onBossEnrage(): void {
@@ -1099,6 +1362,7 @@ export class Game {
     this.camera.addTrauma(0.6);
     this.hud.banner('¡ENFURECIDO!', 'Acaba con él, rápido');
     this.vfx.shockwave(boss.pos, boss.def.accentColor, 9, 1);
+    this.bossSpeak('enrage');
   }
 
   // ========================================================== proyectiles

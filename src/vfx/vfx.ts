@@ -208,6 +208,7 @@ void main() {
 
   vec3 col = uColor;
   float fill;
+  float runes = 0.0;
   if (uProgress < 0.0) {
     // zona persistente: remolino animado
     float swirl = sin(r * 14.0 - uTime * 3.0) * 0.5 + 0.5;
@@ -222,10 +223,34 @@ void main() {
     fill += flash * 0.28 * (0.5 + 0.5 * sin(uTime * 26.0));
     // marcador del frente de avance
     fill += band(r, p0, 0.02) * 0.9;
+
+    // --- runas que se completan una a una alrededor del borde ---
+    float aNorm;
+    if (uShape == 2) {
+      aNorm = clamp((ang + uAngle) / (2.0 * uAngle), 0.0, 1.0); // dentro del cono
+    } else {
+      aNorm = fract((ang + 3.14159) / 6.28318 + uTime * 0.02);  // giro lentísimo
+    }
+    float slots = (uShape == 2) ? 6.0 : 10.0;
+    float slotIdx = floor(aNorm * slots);
+    float slotFrac = fract(aNorm * slots);
+    // glifo: rombo con muesca (procedural) en la banda exterior
+    float dCenter = abs(slotFrac - 0.5);
+    float glyph = band(r, 0.895, 0.032) * (1.0 - smoothstep(0.10, 0.24, dCenter));
+    glyph += band(r, 0.895, 0.012) * (1.0 - smoothstep(0.02, 0.06, dCenter)) * 1.5; // núcleo
+    float litCount = uProgress * slots;
+    float lit = step(slotIdx + 0.5, litCount);
+    // pop al encenderse (decae mientras avanza el countdown)
+    float pop = lit * exp(-max(0.0, litCount - (slotIdx + 0.5)) * 2.2);
+    runes = glyph * (0.10 + lit * 1.1 + pop * 2.2) * inShape;
+
+    // anillo interior punteado giratorio (lectura arcana)
+    float dash = band(r, 0.62, 0.010) * step(0.55, fract(aNorm * 18.0 - uTime * 0.35));
+    runes += dash * (0.25 + uProgress * 0.7) * inShape;
   }
 
-  float a = (fill * inShape + edge * 1.4) * uOpacity;
-  vec3 rgb = col * (fill * inShape * 1.2 + edge * 2.6);
+  float a = (fill * inShape + edge * 1.4 + runes * 0.9) * uOpacity;
+  vec3 rgb = col * (fill * inShape * 1.2 + edge * 2.6 + runes * 3.0);
   gl_FragColor = vec4(rgb, a);
 }
 `;
@@ -268,6 +293,45 @@ export interface BeamHandle {
   setIntensity(x: number): void;
   end(): void;
   readonly ended: boolean;
+}
+
+// ================================================================ reticle
+const RETICLE_FRAG = /* glsl */ `
+varying vec2 vUv;
+uniform vec3 uColor;
+uniform float uTime;
+uniform float uOpacity;
+
+float band(float x, float center, float w) {
+  return smoothstep(center - w, center, x) * (1.0 - smoothstep(center, center + w, x));
+}
+
+void main() {
+  float r = length(vUv);
+  if (r > 1.0) discard;
+  float ang = atan(vUv.y, vUv.x);
+  float aNorm = (ang + 3.14159) / 6.28318;
+
+  // círculo fino interior + punto central
+  float circle = band(r, 0.42, 0.025);
+  float dot_ = smoothstep(0.09, 0.02, r) * (0.6 + 0.4 * sin(uTime * 6.0));
+
+  // 3 arcos giratorios exteriores
+  float arcMask = step(0.62, fract(aNorm * 3.0 + uTime * 0.22));
+  float arcs = band(r, 0.78, 0.045) * arcMask;
+
+  // 4 muescas cardinales que respiran
+  float notch = band(r, 0.55, 0.05) * (1.0 - smoothstep(0.03, 0.09, abs(fract(aNorm * 4.0) - 0.5) * 0.5));
+
+  float v = circle + dot_ + arcs * 1.4 + notch * 0.7;
+  gl_FragColor = vec4(uColor * v * 2.2, v * uOpacity);
+}
+`;
+
+export interface ReticleHandle {
+  setPos(pos: THREE.Vector3): void;
+  setColor(color: number): void;
+  setVisible(v: boolean): void;
 }
 
 // =============================================================== vfx system
@@ -323,6 +387,39 @@ export class VfxSystem {
     slot.dur = dur;
     slot.i0 = intensity;
   }
+
+  // -------------------------------------------------------------- reticle
+  /** Indicador de puntería bajo el cursor (dónde caerá el hechizo). */
+  reticle(color: number): ReticleHandle {
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: TG_VERT,
+      fragmentShader: RETICLE_FRAG,
+      uniforms: {
+        uColor: { value: new THREE.Color(color) },
+        uTime: { value: 0 },
+        uOpacity: { value: 0.85 },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    });
+    const mesh = new THREE.Mesh(this.tgGeo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.scale.setScalar(0.9);
+    mesh.position.y = 0.055;
+    mesh.renderOrder = 4;
+    mesh.visible = false;
+    this.root.add(mesh);
+    this.reticles.add(mat);
+    return {
+      setPos: (p: THREE.Vector3) => { mesh.position.set(p.x, 0.055, p.z); },
+      setColor: (c: number) => { (mat.uniforms.uColor.value as THREE.Color).setHex(c); },
+      setVisible: (v: boolean) => { mesh.visible = v; },
+    };
+  }
+
+  private reticles = new Set<THREE.ShaderMaterial>();
 
   // ------------------------------------------------------------ telegraphs
   telegraph(
@@ -463,6 +560,7 @@ export class VfxSystem {
     this.particles.update(dt);
 
     for (const tg of this.telegraphs) tg.mat.uniforms.uTime.value = t;
+    for (const rm of this.reticles) rm.uniforms.uTime.value = t;
 
     for (const b of [...this.beams]) {
       b.mat.uniforms.uTime.value = t;

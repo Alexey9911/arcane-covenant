@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {
   EffectComposer, RenderPass, EffectPass,
   BloomEffect, SMAAEffect, VignetteEffect, ChromaticAberrationEffect,
-  ToneMappingEffect, ToneMappingMode,
+  HueSaturationEffect, ToneMappingEffect, ToneMappingMode,
 } from 'postprocessing';
 import { PAL } from '../game/palette';
 
@@ -15,7 +15,11 @@ export class Engine {
   readonly camera: THREE.PerspectiveCamera;
   readonly composer: EffectComposer;
   private readonly chroma: ChromaticAberrationEffect;
+  private hueSat!: HueSaturationEffect;
+  private vignette!: VignetteEffect;
   private chromaImpulse = 0;
+  private deathFxK = 0;
+  private deathFxGoal = 0;
   time = 0;
   private fpsAcc = 0;
   private fpsFrames = 0;
@@ -59,12 +63,13 @@ export class Engine {
       radialModulation: true,
       modulationOffset: 0.28,
     });
-    const vignette = new VignetteEffect({ darkness: 0.52, offset: 0.28 });
+    this.vignette = new VignetteEffect({ darkness: 0.52, offset: 0.28 });
     const smaa = new SMAAEffect();
+    this.hueSat = new HueSaturationEffect({ saturation: 0 });
     const tone = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
 
     this.composer.addPass(new EffectPass(this.camera, smaa, bloom));
-    this.composer.addPass(new EffectPass(this.camera, this.chroma, vignette, tone));
+    this.composer.addPass(new EffectPass(this.camera, this.chroma, this.hueSat, this.vignette, tone));
 
     window.addEventListener('resize', this.onResize);
   }
@@ -80,6 +85,11 @@ export class Engine {
   /** Sacudida cromática breve para impactos gordos. */
   pulseChroma(strength: number): void {
     this.chromaImpulse = Math.min(1, this.chromaImpulse + strength);
+  }
+
+  /** 0..1: mundo en blanco y negro cuando el jugador está muerto. */
+  setDeathFx(k: number): void {
+    this.deathFxGoal = THREE.MathUtils.clamp(k, 0, 1);
   }
 
   start(update: (dt: number, t: number) => void): void {
@@ -103,6 +113,11 @@ export class Engine {
     this.chromaImpulse = Math.max(0, this.chromaImpulse - dt * 3.2);
     const off = this.chromaImpulse * this.chromaImpulse * 0.006;
     this.chroma.offset.set(off, off * 0.6);
+
+    // desaturación de muerte (transición suave)
+    this.deathFxK += (this.deathFxGoal - this.deathFxK) * (1 - Math.exp(-dt * 4));
+    this.hueSat.saturation = -0.88 * this.deathFxK;
+    this.vignette.darkness = 0.52 + 0.24 * this.deathFxK;
 
     this.composer.render(dt);
 

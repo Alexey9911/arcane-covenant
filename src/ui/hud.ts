@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { Hero, Boss } from '../entities/units';
 import type { Game } from '../game/game';
-import { BossDef, PLAYER_SPELLS, REVIVE_RANGE, BOSSES } from '../game/balance';
+import { BossDef, SpellDef, REVIVE_RANGE, BOSSES } from '../game/balance';
 import { hex } from '../game/palette';
 import { Input } from '../core/input';
 import { IS_MOBILE } from '../core/engine';
@@ -44,6 +44,23 @@ export class Hud {
   private bossCastStart = -1;
   private bossCastEnd = -1;
   private heroes: Hero[] = [];
+  private playerSpells: SpellDef[] = [];
+  private hotbarEl!: HTMLDivElement;
+  // diálogo de boss
+  private dlgEl!: HTMLDivElement;
+  private dlgPortrait!: HTMLDivElement;
+  private dlgName!: HTMLDivElement;
+  private dlgText!: HTMLDivElement;
+  private dlgT = 0;
+  // UX de muerte
+  private deathArrow!: HTMLDivElement;
+  private deathMsg!: HTMLDivElement;
+  // nameplates
+  private plates: HTMLDivElement[] = [];
+  // chat
+  private chatEl!: HTMLDivElement;
+  private chatLog!: HTMLDivElement;
+  private chatInput!: HTMLInputElement;
 
   constructor(container: HTMLElement, private input: Input) {
     this.root = document.createElement('div');
@@ -87,26 +104,11 @@ export class Hud {
     this.bossSub = this.bossbar.querySelector('.b-sub')!;
     this.bossPortrait = this.bossbar.querySelector('.b-portrait')!;
 
-    // hotbar
-    const hotbar = document.createElement('div');
-    hotbar.className = 'hotbar clickable';
-    PLAYER_SPELLS.forEach((spell, i) => {
-      const slot = document.createElement('div');
-      slot.className = `slot${i === 3 ? ' ult' : ''}`;
-      slot.style.backgroundImage = `url(${img('icons_mage.jpg')})`;
-      slot.style.backgroundSize = '200% 200%';
-      slot.style.backgroundPosition = QUAD_POS[spell.iconIndex ?? i];
-      slot.innerHTML = `<span class="s-key">${i + 1}</span><span class="s-cost">${spell.manaCost}</span><div class="s-cd" style="--cd:0"></div>`;
-      slot.title = spell.name;
-      slot.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        this.input.queueSlot(i);
-      });
-      hotbar.appendChild(slot);
-      this.slots.push(slot);
-      this.slotCds.push(slot.querySelector('.s-cd')!);
-    });
-    this.root.appendChild(hotbar);
+    // hotbar (los slots se construyen por clase en setupMatch)
+    this.hotbarEl = document.createElement('div');
+    this.hotbarEl.className = 'hotbar clickable';
+    this.root.appendChild(this.hotbarEl);
+    void img;
 
     // cast bar
     this.castbar = document.createElement('div');
@@ -144,6 +146,38 @@ export class Hud {
     this.flashEl = document.createElement('div');
     this.flashEl.className = 'dmg-flash';
     this.root.appendChild(this.flashEl);
+
+    // diálogo del boss (subtítulo cinemático)
+    this.dlgEl = document.createElement('div');
+    this.dlgEl.className = 'boss-dialogue arc-panel';
+    this.dlgEl.innerHTML = `
+      <div class="bd-portrait"></div>
+      <div class="bd-body"><div class="bd-name"></div><div class="bd-text"></div></div>`;
+    this.root.appendChild(this.dlgEl);
+    this.dlgPortrait = this.dlgEl.querySelector('.bd-portrait')!;
+    this.dlgName = this.dlgEl.querySelector('.bd-name')!;
+    this.dlgText = this.dlgEl.querySelector('.bd-text')!;
+
+    // guía de muerte: flecha sobre tu cuerpo + mensaje
+    this.deathArrow = document.createElement('div');
+    this.deathArrow.className = 'death-arrow';
+    this.deathArrow.innerHTML = `<div class="da-chevron">▼</div><div class="da-label"></div>`;
+    this.root.appendChild(this.deathArrow);
+    this.deathMsg = document.createElement('div');
+    this.deathMsg.className = 'death-msg';
+    this.root.appendChild(this.deathMsg);
+
+    // nameplates flotantes (4 héroes)
+    for (let i = 0; i < 4; i++) {
+      const p = document.createElement('div');
+      p.className = 'nameplate';
+      p.style.display = 'none';
+      this.root.appendChild(p);
+      this.plates.push(p);
+    }
+
+    // chat
+    this.buildChat();
 
     // combat text pool
     for (let i = 0; i < 26; i++) {
@@ -199,6 +233,90 @@ export class Hud {
     joy.addEventListener('pointercancel', end);
   }
 
+  private buildChat(): void {
+    this.chatEl = document.createElement('div');
+    this.chatEl.className = 'chat clickable';
+    this.chatEl.innerHTML = `
+      <div class="chat-log"></div>
+      <input class="chat-input" maxlength="90" placeholder="Escribe… (Enter)" />`;
+    this.root.appendChild(this.chatEl);
+    this.chatLog = this.chatEl.querySelector('.chat-log')!;
+    this.chatInput = this.chatEl.querySelector('.chat-input')!;
+    // mientras escribes, el juego no roba las teclas
+    this.chatInput.addEventListener('focus', () => { this.input.enabled = false; });
+    this.chatInput.addEventListener('blur', () => { this.input.enabled = true; });
+    this.chatInput.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        const msg = this.chatInput.value.trim();
+        if (msg) this.chatMessage(this.playerName || 'Tú', msg, '#ffc94d');
+        this.chatInput.value = '';
+        this.chatInput.blur();
+      }
+      if (e.key === 'Escape') this.chatInput.blur();
+    });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && this.input.enabled && !this.root.classList.contains('hidden')) {
+        this.chatInput.focus();
+      }
+    });
+  }
+
+  private playerName = '';
+  setPlayerName(name: string): void { this.playerName = name; }
+
+  chatMessage(from: string, msg: string, color = '#e8e2f2'): void {
+    const line = document.createElement('div');
+    line.className = 'chat-line';
+    line.innerHTML = `<b style="color:${color}">${from}:</b> ${msg.replace(/</g, '&lt;')}`;
+    this.chatLog.appendChild(line);
+    while (this.chatLog.children.length > 40) this.chatLog.firstChild?.remove();
+    this.chatLog.scrollTop = this.chatLog.scrollHeight;
+  }
+
+  chatSystem(msg: string): void {
+    const line = document.createElement('div');
+    line.className = 'chat-line system';
+    line.textContent = msg;
+    this.chatLog.appendChild(line);
+    while (this.chatLog.children.length > 40) this.chatLog.firstChild?.remove();
+    this.chatLog.scrollTop = this.chatLog.scrollHeight;
+  }
+
+  /** Subtítulo de diálogo del boss. */
+  bossDialogue(name: string, text: string, dur: number, portraitKey: string): void {
+    this.dlgPortrait.style.backgroundImage = `url(${import.meta.env.BASE_URL}images/${portraitKey}.jpg)`;
+    this.dlgName.textContent = name;
+    this.dlgText.textContent = `“${text}”`;
+    this.dlgEl.classList.add('on');
+    this.dlgT = dur;
+    this.chatSystem(`${name}: “${text}”`);
+  }
+
+  /** Guía cuando TÚ estás muerto: flecha sobre tu cuerpo + countdown. */
+  updateDeathUI(corpsePos: THREE.Vector3 | null, reviverName: string | null, remaining: number | null): void {
+    if (!corpsePos) {
+      this.deathArrow.style.display = 'none';
+      this.deathMsg.classList.remove('on');
+      return;
+    }
+    this.deathMsg.classList.add('on');
+    if (reviverName && remaining !== null) {
+      this.deathMsg.innerHTML = `HAS CAÍDO<span>✚ ${reviverName} te está reviviendo — <b>${remaining.toFixed(1)}s</b></span>`;
+    } else {
+      this.deathMsg.innerHTML = `HAS CAÍDO<span>Tu equipo debe revivirte — que mantengan <b>E</b> junto a tu cuerpo</span>`;
+    }
+    const s = this.projector(new THREE.Vector3(corpsePos.x, 2.6, corpsePos.z));
+    if (s.visible) {
+      this.deathArrow.style.display = 'block';
+      this.deathArrow.style.transform = `translate(${s.x}px, ${s.y}px) translateX(-50%)`;
+      (this.deathArrow.querySelector('.da-label') as HTMLElement).textContent =
+        reviverName && remaining !== null ? `${remaining.toFixed(1)}s` : 'REVIVIR';
+    } else {
+      this.deathArrow.style.display = 'none';
+    }
+  }
+
   setVisible(v: boolean): void {
     this.root.classList.toggle('hidden', !v);
   }
@@ -206,6 +324,31 @@ export class Hud {
   setupMatch(heroes: Hero[], bossDef: BossDef, bossIndex: number, gold: number): void {
     this.heroes = heroes;
     const img = (name: string): string => `${import.meta.env.BASE_URL}images/${name}`;
+    const player = heroes.find((h) => h.isPlayer)!;
+    this.playerSpells = player.spells;
+    this.setPlayerName(player.displayName);
+
+    // hotbar del kit de la clase elegida
+    this.hotbarEl.innerHTML = '';
+    this.slots = [];
+    this.slotCds = [];
+    player.spells.forEach((spell, i) => {
+      const slot = document.createElement('div');
+      slot.className = `slot${i === 3 ? ' ult' : ''}`;
+      slot.style.backgroundImage = `url(${img(`icons_${player.def.id}.jpg`)})`;
+      slot.style.backgroundSize = '200% 200%';
+      slot.style.backgroundPosition = QUAD_POS[spell.iconIndex ?? i];
+      slot.innerHTML = `<span class="s-key">${i + 1}</span><span class="s-cost">${spell.manaCost}</span><div class="s-cd" style="--cd:0"></div>`;
+      slot.title = spell.name;
+      slot.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        this.input.queueSlot(i);
+      });
+      this.hotbarEl.appendChild(slot);
+      this.slots.push(slot);
+      this.slotCds.push(slot.querySelector('.s-cd')!);
+    });
+
     // party frames
     this.party.innerHTML = '';
     this.frames = [];
@@ -216,7 +359,7 @@ export class Hud {
       el.innerHTML = `
         <div class="p-portrait" style="background-image:url(${img('portraits_party.jpg')});background-position:${QUAD_POS[h.def.portraitIndex]}"></div>
         <div class="p-body">
-          <div class="p-name"><span>${h.def.name}${h.isPlayer ? ' (TÚ)' : ''}</span><span class="p-role">${ROLE_LABEL[h.def.role]}</span></div>
+          <div class="p-name"><span>${h.displayName}${h.isPlayer ? ' (TÚ)' : ''}</span><span class="p-role">${ROLE_LABEL[h.def.role]}</span></div>
           <div class="bar hp"><div class="fill"></div></div>
           <div class="bar mp"><div class="fill"></div></div>
         </div>
@@ -229,6 +372,14 @@ export class Hud {
         mp: el.querySelector('.bar.mp .fill')!,
         rev: el.querySelector('.p-revive .fill')!,
       });
+    });
+
+    // nameplates
+    heroes.forEach((h, i) => {
+      const p = this.plates[i];
+      p.textContent = h.displayName;
+      p.style.color = h.isPlayer ? '#ffe9a3' : hex(h.def.color);
+      p.classList.toggle('me', h.isPlayer);
     });
 
     // boss bar
@@ -271,7 +422,7 @@ export class Hud {
 
     // hotbar
     const p = game.player;
-    PLAYER_SPELLS.forEach((spell, i) => {
+    this.playerSpells.forEach((spell, i) => {
       const total = spell.cooldown * game.cooldownMult;
       const left = p.cooldownLeft(spell, now);
       const frac = total > 0 ? Math.min(1, left / total) : 0;
@@ -279,6 +430,20 @@ export class Hud {
       this.slotCds[i].textContent = left > 0.2 ? String(Math.ceil(left)) : '';
       this.slots[i].classList.toggle('nomana', p.mana < spell.manaCost && left <= 0);
       this.slots[i].classList.toggle('casting', p.castingSpell?.id === spell.id);
+    });
+
+    // nameplates flotantes sobre cada héroe
+    this.heroes.forEach((h, i) => {
+      const plate = this.plates[i];
+      if (!h.group.visible) { plate.style.display = 'none'; return; }
+      const s = this.projector(new THREE.Vector3(h.pos.x, h.headHeight + 0.55, h.pos.z));
+      if (s.visible) {
+        plate.style.display = 'block';
+        plate.style.transform = `translate(${s.x}px, ${s.y}px) translateX(-50%)`;
+        plate.classList.toggle('dead', !h.alive);
+      } else {
+        plate.style.display = 'none';
+      }
     });
 
     // cast bar / revive channel
@@ -370,6 +535,11 @@ export class Hud {
     if (this.bannerT > 0) {
       this.bannerT -= dt;
       if (this.bannerT <= 0) this.bannerEl.classList.remove('on');
+    }
+    // diálogo del boss
+    if (this.dlgT > 0) {
+      this.dlgT -= dt;
+      if (this.dlgT <= 0) this.dlgEl.classList.remove('on');
     }
     // flash
     if (this.flashT > 0) {
