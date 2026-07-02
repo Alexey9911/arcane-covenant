@@ -249,7 +249,9 @@ export class Hud {
       e.stopPropagation();
       if (e.key === 'Enter') {
         const msg = this.chatInput.value.trim();
-        if (msg) this.chatMessage(this.playerName || 'Tú', msg, '#ffc94d');
+        if (msg && !this.onChatSend(msg)) {
+          this.chatMessage(this.playerName || 'Tú', msg, '#ffc94d');
+        }
         this.chatInput.value = '';
         this.chatInput.blur();
       }
@@ -264,6 +266,14 @@ export class Hud {
 
   private playerName = '';
   setPlayerName(name: string): void { this.playerName = name; }
+
+  /** Si devuelve true, el mensaje fue al servidor (el eco llega por red). */
+  onChatSend: (msg: string) => boolean = () => false;
+
+  /** El chat también se ve fuera del HUD (setup/lobbies). */
+  setChatDetached(v: boolean): void {
+    this.chatEl.classList.toggle('detached', v);
+  }
 
   chatMessage(from: string, msg: string, color = '#e8e2f2'): void {
     const line = document.createElement('div');

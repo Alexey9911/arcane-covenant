@@ -1,8 +1,9 @@
-import { LOBBY_NAMES, UPGRADES, upgradeCost, BOSSES, BossDef, PLAYER_KITS, CLASSES } from '../game/balance';
+import { LOBBY_NAMES, UPGRADES, upgradeCost, BOSSES, BossDef, PLAYER_KITS, CLASSES, ClassId } from '../game/balance';
 import { hex } from '../game/palette';
 import type { Game, SetupStep } from '../game/game';
+import { net } from '../net/net';
 
-export type ScreenName = 'title' | 'lobby' | 'loading' | 'market' | 'victory' | 'defeat' | 'runComplete' | 'setup';
+export type ScreenName = 'title' | 'lobby' | 'loading' | 'market' | 'victory' | 'defeat' | 'runComplete' | 'setup' | 'lobbies' | 'lobbyRoom';
 
 export interface ScreensCallbacks {
   onTitleEnter(): void;
@@ -91,6 +92,175 @@ export class Screens {
       case 'defeat': this.buildDefeat(screen, data as { consolation: number }); break;
       case 'runComplete': this.buildRunComplete(screen, data as { gold: number }); break;
       case 'setup': this.buildSetup(screen, data!.game as Game, (data!.step as SetupStep) ?? 'nick'); break;
+      case 'lobbies': this.buildLobbies(screen, data!.game as Game); break;
+      case 'lobbyRoom': this.buildLobbyRoom(screen, data!.game as Game); break;
+    }
+  }
+
+  /** Re-render de la pantalla actual (cuando llega meta/lobbyUpdate). */
+  refresh(game: Game): void {
+    if (this.current === 'lobbies') this.show('lobbies', { game });
+    else if (this.current === 'lobbyRoom') {
+      if (net.lobby) this.show('lobbyRoom', { game });
+      else this.show('lobbies', { game });
+    }
+  }
+
+  // ============================ lobbies online ============================
+  private buildLobbies(screen: HTMLElement, game: Game): void {
+    screen.classList.add('transparent');
+    game.setSetupStep('ready');
+    const meta = net.meta;
+    const wrap = document.createElement('div');
+    wrap.className = 'ready-wrap';
+    screen.appendChild(wrap);
+
+    const panel = document.createElement('div');
+    panel.className = 'setup-panel arc-panel setup-ready';
+    panel.innerHTML = `
+      <div class="setup-step">NEXO ONLINE ${net.connected ? `· ${meta?.online ?? 1} CONECTADOS` : '· SIN CONEXIÓN'}</div>
+      <div class="screen-heading">Grupos de incursión</div>
+      <div class="ready-list lobbies-list"></div>
+      <div class="lobby-create"></div>
+      <div class="setup-actions"></div>`;
+    wrap.appendChild(panel);
+
+    const list = panel.querySelector('.lobbies-list')!;
+    const lobbies = meta?.lobbies ?? [];
+    if (!net.connected) {
+      list.innerHTML = `<div class="screen-sub">Conectando con el Nexo…</div>`;
+    } else if (lobbies.length === 0) {
+      list.innerHTML = `<div class="screen-sub">No hay grupos abiertos — crea el tuyo</div>`;
+    } else {
+      for (const l of lobbies) {
+        const row = document.createElement('div');
+        row.className = 'ready-row';
+        row.innerHTML = `
+          <div class="r-info">
+            <div class="r-name">${l.title} <span style="color:var(--muted);font-size:11px">[${l.code}]</span></div>
+            <div class="r-class">${l.mode === 'solana' ? `◎ ${l.bet} SOL` : 'AMISTOSA'} · BOSS ${'I'.repeat(l.bossIndex + 1)} · ${l.players.length}/4</div>
+          </div>`;
+        row.appendChild(this.btn('Unirse', false, () => {
+          net.joinLobby(l.code, game.heroes[game.playerIndex].def.id);
+        }));
+        list.appendChild(row);
+      }
+    }
+
+    // crear grupo
+    const create = panel.querySelector('.lobby-create')!;
+    const solOk = !!meta?.solana?.enabled;
+    create.innerHTML = `
+      <div class="create-row">
+        <input class="nick-input c-title" maxlength="24" placeholder="Nombre del grupo…" style="font-size:14px;padding:8px 10px" />
+        <select class="c-mode nick-input" style="font-size:13px;padding:8px 6px;width:130px">
+          <option value="normal">Amistosa</option>
+          ${solOk ? '<option value="solana">◎ Solana</option>' : ''}
+        </select>
+        <input class="c-bet nick-input" type="number" min="0.01" max="5" step="0.01" value="0.05" style="width:80px;font-size:13px;padding:8px 6px;display:none" />
+      </div>`;
+    const modeSel = create.querySelector('.c-mode') as HTMLSelectElement;
+    const betInp = create.querySelector('.c-bet') as HTMLInputElement;
+    modeSel.addEventListener('change', () => { betInp.style.display = modeSel.value === 'solana' ? 'block' : 'none'; });
+
+    const actions = panel.querySelector('.setup-actions')!;
+    actions.appendChild(this.btn('Crear grupo', true, () => {
+      if (!net.connected) return;
+      net.createLobby({
+        title: (create.querySelector('.c-title') as HTMLInputElement).value.trim() || `Cruzada de ${game.nickname}`,
+        mode: modeSel.value as 'normal' | 'solana',
+        bet: parseFloat(betInp.value) || 0.05,
+        classId: game.heroes[game.playerIndex].def.id,
+      });
+    }));
+    actions.appendChild(this.btn('Jugar solo (IA)', false, () => this.show('setup', { game, step: 'ready' })));
+    actions.appendChild(this.btn('← Héroe', false, () => this.show('setup', { game, step: 'avatar' })));
+
+    // leaderboard global
+    const lb = document.createElement('div');
+    lb.className = 'setup-panel arc-panel lb-panel';
+    const rows = (meta?.leaderboard ?? []).slice(0, 8).map((p, i) =>
+      `<div class="lb-row"><span>${i + 1}. ${p.nick}</span><b>${p.bossKills} ☠ · ${p.solEarned.toFixed(2)} ◎</b></div>`).join('');
+    lb.innerHTML = `
+      <div class="screen-heading" style="font-size:17px">Leaderboard global</div>
+      <div class="lb-list">${rows || '<div class="lb-soon">Aún no hay leyendas</div>'}</div>`;
+    wrap.appendChild(lb);
+  }
+
+  private buildLobbyRoom(screen: HTMLElement, game: Game): void {
+    screen.classList.add('transparent');
+    game.setSetupStep('ready');
+    const l = net.lobby;
+    if (!l) { this.show('lobbies', { game }); return; }
+    const me = l.players.find((p) => p.id === net.myId);
+    const wrap = document.createElement('div');
+    wrap.className = 'ready-wrap';
+    screen.appendChild(wrap);
+
+    const panel = document.createElement('div');
+    panel.className = 'setup-panel arc-panel setup-ready';
+    panel.innerHTML = `
+      <div class="setup-step">${l.mode === 'solana' ? `◎ APUESTA ${l.bet} SOL · REPARTO POR DAÑO` : 'INCURSIÓN AMISTOSA'} · [${l.code}]</div>
+      <div class="screen-heading">${l.title}</div>
+      <div class="screen-sub">Boss ${'I'.repeat(l.bossIndex + 1)}: ${BOSSES[l.bossIndex].name} ${BOSSES[l.bossIndex].title}</div>
+      <div class="ready-list"></div>
+      <div class="setup-actions"></div>`;
+    wrap.appendChild(panel);
+
+    const list = panel.querySelector('.ready-list')!;
+    for (const p of l.players) {
+      const cls = CLASSES[p.classId as ClassId];
+      const row = document.createElement('div');
+      row.className = `ready-row ${p.ready ? 'rdy' : ''}`;
+      row.innerHTML = `
+        <div class="r-portrait" style="background-image:url(${this.img('portraits_party.jpg')});background-position:${QUAD_POS[cls?.portraitIndex ?? 0]};border-color:${hex(cls?.color ?? 0x888888)}"></div>
+        <div class="r-info">
+          <div class="r-name" style="color:${hex(cls?.color ?? 0xffffff)}">${p.nick}${p.id === net.myId ? ' (TÚ)' : ''}${p.id === l.hostId ? ' 👑' : ''}</div>
+          <div class="r-class">${cls?.name ?? p.classId}${l.mode === 'solana' ? (p.escrowed ? ' · ◎ DEPOSITADO' : ' · sin depósito') : ''}</div>
+        </div>
+        <div class="r-check">${p.ready ? '✔ LISTO' : '…'}</div>`;
+      list.appendChild(row);
+    }
+
+    const actions = panel.querySelector('.setup-actions')!;
+    const needsDeposit = l.mode === 'solana' && l.bet > 0 && me && !me.escrowed;
+    if (needsDeposit) {
+      actions.appendChild(this.btn(`Depositar ${l.bet} ◎`, true, () => { void this.walletDeposit(game, l.bet); }));
+    } else if (me && !me.ready) {
+      actions.appendChild(this.btn('¡Listo para luchar!', true, () => net.setReady(true)));
+    } else {
+      actions.appendChild(this.btn('Cancelar listo', false, () => net.setReady(false)));
+    }
+    actions.appendChild(this.btn('Salir del grupo', false, () => {
+      net.leaveLobby();
+      this.show('lobbies', { game });
+    }));
+  }
+
+  /** Deposita la apuesta con Phantom hacia la house wallet. */
+  private async walletDeposit(game: Game, bet: number): Promise<void> {
+    const provider = (window as unknown as { solana?: { isPhantom?: boolean; connect(): Promise<{ publicKey: { toString(): string } }>; signAndSendTransaction(t: unknown): Promise<{ signature: string }> } }).solana;
+    const house = net.meta?.solana?.house;
+    const cluster = net.meta?.solana?.cluster ?? 'devnet';
+    if (!provider) { alert('Instala Phantom para las apuestas en SOL'); return; }
+    if (!house) return;
+    try {
+      const { publicKey } = await provider.connect();
+      net.hello(game.nickname, publicKey.toString());
+      const web3 = await import('@solana/web3.js');
+      const conn = new web3.Connection(web3.clusterApiUrl(cluster as never), 'confirmed');
+      const tx = new web3.Transaction().add(web3.SystemProgram.transfer({
+        fromPubkey: new web3.PublicKey(publicKey.toString()),
+        toPubkey: new web3.PublicKey(house),
+        lamports: Math.floor(bet * web3.LAMPORTS_PER_SOL),
+      }));
+      tx.feePayer = new web3.PublicKey(publicKey.toString());
+      tx.recentBlockhash = (await conn.getLatestBlockhash()).blockhash;
+      const { signature } = await provider.signAndSendTransaction(tx);
+      await conn.confirmTransaction(signature, 'confirmed');
+      net.escrowDeposit(signature);
+    } catch (e) {
+      alert(`Depósito fallido: ${(e as Error).message}`);
     }
   }
 
@@ -176,7 +346,12 @@ export class Screens {
       });
       const actions = panel.querySelector('.setup-actions')!;
       actions.appendChild(this.btn('Confirmar héroe', true, () => {
-        this.show('setup', { game, step: 'ready' });
+        if (net.connected) {
+          if (net.lobby) net.updateClass(game.heroes[game.playerIndex].def.id);
+          this.show(net.lobby ? 'lobbyRoom' : 'lobbies', { game });
+        } else {
+          this.show('setup', { game, step: 'ready' });
+        }
       }));
     };
     render();

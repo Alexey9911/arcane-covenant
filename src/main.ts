@@ -1,5 +1,8 @@
 import './ui/styles.css';
+import { Buffer } from 'buffer';
+(window as unknown as Record<string, unknown>).Buffer ??= Buffer; // polyfill para @solana/web3.js
 import * as THREE from 'three';
+import { net } from './net/net';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { Engine } from './core/engine';
 import { Input } from './core/input';
@@ -56,9 +59,43 @@ hud.setProjector((world) => {
 
 let preloading: Promise<unknown> | null = null;
 
+// ------------------------------- red -----------------------------------
+const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL as string | undefined)
+  ?? (import.meta.env.PROD ? 'https://arcane-covenant-server.fly.dev' : 'http://localhost:8124');
+
+hud.onChatSend = (msg) => {
+  if (!net.connected) return false;
+  net.chat(msg);
+  return true;
+};
+net.onChat = (m) => hud.chatMessage(m.nick, m.msg, m.nick === game.nickname ? '#ffc94d' : '#e8e2f2');
+net.onChatBlocked = (d) => hud.chatSystem(`🛡 ${d.reason}`);
+net.onChatHistory = (h) => h.forEach((m) => hud.chatMessage(m.nick, m.msg, '#8a8798'));
+net.onError = (d) => hud.chatSystem(`⚠ ${d.msg}`);
+net.onMeta = () => screens.refresh(game);
+net.onLobby = (l) => {
+  if (l && (screens.active === 'lobbies' || screens.active === 'lobbyRoom')) {
+    screens.show('lobbyRoom', { game });
+  } else {
+    screens.refresh(game);
+  }
+};
+net.onCountdown = () => hud.banner('¡La incursión comienza!', 'Preparaos');
+net.onMatchStart = (d) => { void game.startNetMatch(d); };
+net.onSnap = (s) => game.onNetSnap(s);
+net.onPInput = (d) => game.onNetInput(d.slot, d.input as never);
+net.onSettled = (d) => game.netSettled(d);
+net.onAborted = (d) => {
+  hud.chatSystem(`⚠ ${d.reason}`);
+  void game.enterSetup('ready');
+  screens.show('lobbyRoom', { game });
+};
+
 screens.cb = {
   onTitleEnter: () => {
     audio.unlock();
+    net.connect(SOCKET_URL, game.nickname || 'Errante');
+    hud.setChatDetached(true);
     // precarga modelos del primer combate mientras eliges nombre y héroe
     preloading ??= preloadModels([
       { key: 'hero_mage', rigged: true },

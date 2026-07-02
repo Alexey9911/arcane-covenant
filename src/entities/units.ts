@@ -131,6 +131,8 @@ export class Hero extends Unit {
 
   isPlayer: boolean;
   nickname = '';
+  /** Daño total infligido esta partida (reparto Solana por daño). */
+  damageDealt = 0;
 
   constructor(readonly def: ClassDef, isPlayer: boolean) {
     super(def.color);
@@ -241,6 +243,7 @@ export interface Projectile {
   radius: number;
   damage: number;
   fromHero: boolean;
+  owner: Hero | null;
   color: number;
   maxDist: number;
   traveled: number;
@@ -272,7 +275,7 @@ export class ProjectilePool {
       root.add(mesh);
       this.items.push({
         active: false, pos: new THREE.Vector3(), vel: new THREE.Vector3(),
-        radius: 0.5, damage: 0, fromHero: true, color: 0xffffff,
+        radius: 0.5, damage: 0, fromHero: true, owner: null, color: 0xffffff,
         maxDist: 30, traveled: 0, homingTarget: null, homingStrength: 0,
         spell: null, mesh, glow,
       });
@@ -282,11 +285,12 @@ export class ProjectilePool {
   fire(opts: {
     from: THREE.Vector3; dir: THREE.Vector3; speed: number; radius: number; damage: number;
     fromHero: boolean; color: number; maxDist?: number; homing?: Unit; homingStrength?: number;
-    spell?: SpellDef; scale?: number;
+    spell?: SpellDef; scale?: number; owner?: Hero;
   }): void {
     const p = this.items.find((x) => !x.active);
     if (!p) return;
     p.active = true;
+    p.owner = opts.owner ?? null;
     p.pos.copy(opts.from);
     p.vel.copy(opts.dir).normalize().multiplyScalar(opts.speed);
     p.radius = opts.radius;

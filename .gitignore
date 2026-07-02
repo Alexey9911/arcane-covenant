@@ -8,5 +8,6 @@ scripts/meshy_status.json
 scripts/meshy_rig_status.json
 qa/*.png
 .vercel
-
-.vercel
+server/data.json
+server/house-wallet.local.json
+server/.env

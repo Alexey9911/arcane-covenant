@@ -609,6 +609,19 @@ html, body {
   transition: opacity 0.15s, border-color 0.15s;
 }
 .chat-input:focus { opacity: 1; border-color: var(--gold-dim); }
+/* el chat vive aunque el HUD esté oculto (setup/lobbies online) */
+#hud.hidden .chat.detached { display: flex; }
+#hud.hidden .chat.detached { position: fixed; z-index: 45; }
+
+.create-row { display: flex; gap: 8px; margin-top: 12px; }
+.create-row .c-title { flex: 1; text-align: left; font-family: var(--font-ui); }
+.lb-list { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; }
+.lb-row {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 13px; padding: 4px 8px;
+  background: rgba(38, 32, 58, 0.5); border: 1px solid var(--line);
+}
+.lb-row b { color: var(--gold); font-weight: 700; }
 
 /* ---------- onboarding / setup ---------- */
 .screen.transparent { justify-content: flex-end; padding-bottom: 5vh; background: none; }

@@ -11,6 +11,11 @@ import { updateCompanion, updateBossAI, updateAdds, steerTo } from './ai';
 import type { Hud } from '../ui/hud';
 import type { Screens } from '../ui/screens';
 import { bumpStats } from '../ui/screens';
+import { net, MatchSlot } from '../net/net';
+import {
+  hostReset, hostApplyRemotes, hostBroadcast, hostStoreInput,
+  peerReset, peerUpdate, peerStoreSnap, NetEvent, Snap,
+} from '../net/sync';
 import {
   CLASSES, BOSSES, SpellDef, BossAttackDef, BossDef,
   PLAY_RADIUS, REVIVE_TIME, REVIVE_RANGE, REVIVE_HP_FRACTION,
@@ -97,6 +102,11 @@ export class Game {
   private selectRing: THREE.Mesh | null = null;
   private reticle: ReticleHandle | null = null;
   private deathPulseT = 0;
+  // multiplayer
+  netRole: 'off' | 'host' | 'peer' = 'off';
+  slotHero: Map<number, number> | null = null; // slot de red -> índice de héroe
+  private remoteHeroIdx = new Set<number>();
+  private netEvents: NetEvent[] = [];
   private beamTickAcc = 0;
   private raycaster = new THREE.Raycaster();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -207,15 +217,157 @@ export class Game {
     this.nickname = nick.slice(0, 16);
     localStorage.setItem('ac_nick', this.nickname);
     this.heroes.forEach((h) => { h.nickname = h.isPlayer ? this.nickname : ''; });
+    if (net.connected) net.hello(this.nickname);
   }
 
-  /** Todos listos: a la arena. */
+  /** Todos listos: a la arena (modo solo/IA). */
   async beginBattle(): Promise<void> {
+    this.netRole = 'off';
+    this.slotHero = null;
+    this.remoteHeroIdx.clear();
     this.audio.play('ui_join', { group: 'ui' });
     this.camera.clearCinematic();
     this.state = 'loading';
     this.screens.show('loading');
     await this.startMatch(this.bossIndex);
+  }
+
+  // ------------------------------------------------------ partida online
+  async startNetMatch(d: { slots: MatchSlot[]; bossIndex: number; hostId: string }): Promise<void> {
+    this.slotHero = new Map();
+    this.remoteHeroIdx.clear();
+    this.netEvents = [];
+    for (const s of d.slots) {
+      const idx = CLASS_ORDER.indexOf(s.classId as ClassId);
+      if (idx < 0) continue;
+      this.slotHero.set(s.slot, idx);
+      this.heroes[idx].nickname = s.nick;
+      if (s.id === net.myId) {
+        this.playerIndex = idx;
+      } else {
+        this.remoteHeroIdx.add(idx);
+      }
+    }
+    this.heroes.forEach((h, i) => { h.isPlayer = i === this.playerIndex; });
+    this.netRole = net.isHost ? 'host' : 'peer';
+    hostReset();
+    peerReset();
+    this.bossIndex = d.bossIndex;
+    this.camera.clearCinematic();
+    this.state = 'loading';
+    this.screens.show('loading');
+    await this.startMatch(d.bossIndex);
+    this.heroes.forEach((h) => { h.damageDealt = 0; });
+  }
+
+  isRemoteHero(h: Hero): boolean {
+    return this.remoteHeroIdx.has(this.heroes.indexOf(h));
+  }
+
+  pushNetEvent(ev: NetEvent): void {
+    if (this.netRole === 'host') this.netEvents.push(ev);
+  }
+
+  drainNetEvents(): NetEvent[] {
+    const e = this.netEvents;
+    this.netEvents = [];
+    return e;
+  }
+
+  onNetInput(slot: number, input: never): void {
+    hostStoreInput(slot, input);
+  }
+
+  onNetSnap(snap: unknown): void {
+    peerStoreSnap(snap as Snap);
+  }
+
+  /** El peer replica eventos visuales del host. */
+  replayNetEvent(ev: NetEvent): void {
+    switch (ev.t) {
+      case 'tg': {
+        const pos = new THREE.Vector3(ev.x as number, 0, ev.z as number);
+        const h = this.vfx.telegraph(ev.shape as never, pos, ev.r as number, {
+          inner: ev.inner as number, angle: ev.angle as number, dir: ev.dir as number, color: PAL.boss.threat,
+        });
+        this.strikes.push({
+          handle: h, t: 0, dur: ev.dur as number, shape: ev.shape as never,
+          pos, radius: ev.r as number, inner: (ev.inner as number) ?? 0,
+          angle: (ev.angle as number) ?? 0, dir: (ev.dir as number) ?? 0,
+          damage: 0, color: PAL.boss.threat,
+        });
+        break;
+      }
+      case 'vfx': {
+        const pos = new THREE.Vector3(ev.x as number, (ev.y as number) ?? 0.5, ev.z as number);
+        const color = ev.color as number;
+        const kind = ev.kind as string;
+        if (kind === 'big') this.vfx.bigImpact(pos, color, (ev.r as number) ?? 4);
+        else if (kind === 'nova') this.vfx.nova(pos, color, (ev.r as number) ?? 6);
+        else if (kind === 'heal') this.vfx.healBurst(pos, color);
+        else if (kind === 'revive') this.vfx.reviveBurst(pos);
+        else this.vfx.impact(pos, color, (ev.r as number) ?? 1);
+        break;
+      }
+      case 'proj': {
+        this.projectiles.fire({
+          from: new THREE.Vector3(ev.x as number, (ev.y as number) ?? 1, ev.z as number),
+          dir: new THREE.Vector3(ev.dx as number, 0, ev.dz as number),
+          speed: ev.sp as number, radius: 0.5, damage: 0, fromHero: (ev.fh as boolean) ?? true,
+          color: ev.color as number, scale: (ev.sc as number) ?? 1,
+        });
+        break;
+      }
+      case 'dlg':
+        this.bossSpeak(ev.key as DialogueKey);
+        break;
+      case 'banner':
+        this.hud.banner(ev.a as string, (ev.b as string) ?? '');
+        break;
+    }
+  }
+
+  private updatePeerFrame(dt: number): void {
+    this.updateAim();
+    peerUpdate(this, dt);
+    // telegraphs visuales (daño 0) avanzan localmente
+    this.updateStrikes(dt);
+    this.updateProjectiles(dt);
+    const me = this.player;
+    this.engine.setDeathFx(!me.alive ? 1 : 0);
+    if (!me.alive) {
+      const reviver = this.heroes.find((h) => h.alive && h.reviveTargetId === me.id);
+      this.hud.updateDeathUI(me.pos, reviver ? reviver.displayName : null, null);
+    } else {
+      this.hud.updateDeathUI(null, null, null);
+    }
+    this.camera.zoomBy(this.input.consumeZoom());
+    this.camera.update(dt, me.alive ? me.pos : this.deadPlayerFocus(), me.alive ? this.input.aimPoint : null, this.time);
+    this.hud.updateCombat(this, dt);
+  }
+
+  /** Cast de un héroe controlado por otro jugador (en el host). */
+  remoteCast(hero: Hero, slotIdx: number, aim: THREE.Vector3): void {
+    const spell = hero.spells[slotIdx];
+    if (!spell || !hero.spellReady(spell, this.now) || hero.castingSpell) return;
+    hero.mana -= spell.manaCost;
+    hero.cooldowns.set(spell.id, this.now + spell.cooldown * this.cooldownMult);
+    hero.facing = Math.atan2(aim.z - hero.pos.z, aim.x - hero.pos.x);
+    const aimC = aim.clone();
+    if (spell.castTime > 0) {
+      hero.castingSpell = spell;
+      hero.castT = 0;
+      hero.castTotal = spell.castTime;
+      hero.visual?.setCast(true);
+      setTimeout(() => {
+        if (hero.castingSpell !== spell) return;
+        hero.castingSpell = null;
+        hero.visual?.setCast(false);
+        if (hero.alive && this.state === 'combat') this.castSpellFor(hero, spell, aimC);
+      }, spell.castTime * 1000);
+    } else {
+      this.castSpellFor(hero, spell, aimC);
+    }
   }
 
   private updateSetup(dt: number): void {
@@ -328,6 +480,7 @@ export class Game {
     const dur = this.audio.play(`voice/${boss.def.id}_${key}` as never, { volume: 1, throttleMs: 500 }) || 2.8;
     this.audio.muteBossUntil = performance.now() + (dur + 0.4) * 1000;
     this.hud.bossDialogue(boss.def.name, text, dur + 1.0, boss.def.portrait);
+    if (this.netRole === 'host') this.pushNetEvent({ t: 'dlg', key });
   }
 
   private clearBattlefield(): void {
@@ -454,7 +607,10 @@ export class Game {
     switch (this.state) {
       case 'setup': this.updateSetup(dt); break;
       case 'intro': this.updateIntro(dt); break;
-      case 'combat': this.updateCombat(dt); break;
+      case 'combat':
+        if (this.netRole === 'peer') this.updatePeerFrame(dt);
+        else this.updateCombat(dt);
+        break;
       case 'victory':
       case 'defeat':
         this.updateAmbientOnly(dt);
@@ -500,7 +656,13 @@ export class Game {
 
     this.updateAim();
     this.updatePlayer(dt);
-    for (const h of this.heroes) if (!h.isPlayer) updateCompanion(h, this, dt);
+    for (const h of this.heroes) {
+      if (!h.isPlayer && !this.isRemoteHero(h)) updateCompanion(h, this, dt);
+    }
+    if (this.netRole === 'host') {
+      hostApplyRemotes(this, dt);
+      hostBroadcast(this, dt);
+    }
     if (this.boss) updateBossAI(this.boss, this, dt);
     updateAdds(this, dt);
     this.updateProjectiles(dt);
@@ -544,12 +706,51 @@ export class Game {
 
     // condiciones de fin
     if (this.boss && !this.boss.alive && this.state === 'combat') {
-      this.victory();
+      if (this.netRole === 'host') this.netFinish('victory');
+      else this.victory();
       return;
     }
     if (this.heroes.every((h) => !h.alive) && this.state === 'combat') {
-      this.defeat();
+      if (this.netRole === 'host') this.netFinish('defeat');
+      else this.defeat();
     }
+  }
+
+  /** Fin de partida online (host): reporta daño por slot; el server reparte. */
+  private netFinish(type: 'victory' | 'defeat'): void {
+    const damageBySlot: Record<number, number> = {};
+    if (this.slotHero) {
+      for (const [slot, idx] of this.slotHero) {
+        damageBySlot[slot] = Math.round(this.heroes[idx].damageDealt);
+      }
+    }
+    net.matchEvent({ type, damageBySlot, bossIndex: this.bossIndex });
+    this.state = type === 'victory' ? 'victory' : 'defeat';
+    if (type === 'victory') {
+      this.audio.play('victory_stinger', { volume: 0.9 });
+      bumpStats({ bossKills: 1 });
+    } else {
+      this.audio.play('defeat_stinger', { volume: 0.9 });
+      this.engine.setDeathFx(0.6);
+    }
+    this.clearBattlefieldSoft();
+  }
+
+  /** Ambos lados: el server confirmó el settle — volver al grupo. */
+  netSettled(d: { type: string; payouts: { nick: string; amount: number; share: number }[]; nextBossIndex: number }): void {
+    if (this.netRole === 'peer' && this.state === 'combat') {
+      this.state = d.type === 'victory' ? 'victory' : 'defeat';
+      this.audio.play(d.type === 'victory' ? 'victory_stinger' : 'defeat_stinger', { volume: 0.9 });
+      this.clearBattlefieldSoft();
+    }
+    for (const p of d.payouts) {
+      if (p.amount > 0) this.hud.chatSystem(`◎ ${p.nick} gana ${p.amount} SOL (${p.share}% del daño)`);
+    }
+    this.bossIndex = d.nextBossIndex;
+    setTimeout(() => {
+      void this.enterSetup('ready');
+      this.screens.show('lobbyRoom', { game: this });
+    }, 2600);
   }
 
   private deadPlayerFocus(): THREE.Vector3 {
@@ -701,7 +902,11 @@ export class Game {
   }
 
   private resolvePlayerSpell(spell: SpellDef): void {
-    const p = this.player;
+    this.castSpellFor(this.player, spell, this.player.castAim);
+  }
+
+  /** Resolución de hechizo para CUALQUIER héroe (jugador local o remoto). */
+  castSpellFor(p: Hero, spell: SpellDef, aim: THREE.Vector3): void {
     const dmg = spell.power * this.partyDamageMult;
     switch (spell.kind) {
       case 'projectile': {
@@ -709,7 +914,7 @@ export class Game {
         this.vfx.castSparks(this.tmp.set(p.pos.x, p.castHeight, p.pos.z), spell.color);
         const n = spell.count ?? 1;
         for (let i = 0; i < n; i++) {
-          this.tmp2.copy(p.castAim).sub(p.pos);
+          this.tmp2.copy(aim).sub(p.pos);
           this.tmp2.y = 0;
           this.tmp2.normalize();
           if (n > 1) {
@@ -723,6 +928,7 @@ export class Game {
             from: this.tmp.set(p.pos.x, p.castHeight, p.pos.z),
             dir: this.tmp2.clone(), speed: spell.speed ?? 24, radius: spell.radius ?? 1.2,
             damage: dmg, fromHero: true, color: spell.color, spell, scale: n > 1 ? 0.9 : 1.25,
+            owner: p,
           });
         }
         break;
@@ -735,7 +941,7 @@ export class Game {
         break;
       }
       case 'groundAoe': {
-        const target = p.castAim.clone();
+        const target = aim.clone();
         this.vfx.bigImpact(target, spell.color, spell.radius ?? 5);
         this.audio.play((spell.impactSound ?? 'meteor_impact') as never, { volume: 1 });
         this.camera.addTrauma(0.75);
@@ -757,7 +963,7 @@ export class Game {
           while (diff < -Math.PI) diff += Math.PI * 2;
           if (Math.abs(diff) < Math.PI / 2) {
             this.vfx.impact(this.tmp.set(u.pos.x, u.castHeight * 0.6, u.pos.z), spell.color, 1);
-            this.damageEnemy(u, dmg, spell.color);
+            this.damageEnemy(u, dmg, spell.color, true, p);
           }
         }
         this.camera.addTrauma(0.18);
@@ -847,16 +1053,17 @@ export class Game {
       this.beamTickAcc -= tickInterval;
       if (hitUnit) {
         const dmg = (spell.power * this.partyDamageMult) * (tickInterval / spell.castTime);
-        this.damageEnemy(hitUnit, dmg, spell.color, false);
+        this.damageEnemy(hitUnit, dmg, spell.color, false, p);
         this.vfx.trail(end, spell.color, 1, 60, 1.2);
       }
     }
   }
 
   // ====================================================== daño a enemigos
-  damageEnemy(unit: Unit, amount: number, color: number, showText = true): void {
+  damageEnemy(unit: Unit, amount: number, color: number, showText = true, attacker?: Hero | Unit): void {
     const dealt = unit.takeDamage(amount, this.now);
     if (dealt <= 0) return;
+    if (attacker instanceof Hero) attacker.damageDealt += dealt;
     if (showText) this.hud.combatText(this.tmp.set(unit.pos.x, unit.headHeight, unit.pos.z), String(Math.round(dealt)), '#ffd977', dealt > 200);
     if (!unit.alive) {
       if (unit === this.boss) {
@@ -1074,7 +1281,7 @@ export class Game {
   meleeHit(attacker: Unit, target: Unit, damage: number, color: number, sound?: string): void {
     if (sound) this.audio.play(sound as never, { volume: 0.75 });
     this.vfx.impact(this.tmp.set(target.pos.x, target.castHeight * 0.6, target.pos.z), color, 0.7);
-    this.damageEnemy(target, damage, color);
+    this.damageEnemy(target, damage, color, true, attacker);
   }
 
   aiBeginCast(hero: Hero, spell: SpellDef, target: Hero | null): void {
@@ -1136,6 +1343,7 @@ export class Game {
         from: this.tmp.set(hero.pos.x, hero.castHeight, hero.pos.z),
         dir: this.tmp2.clone(), speed: spell.speed ?? 28, radius: spell.radius ?? 0.8,
         damage: spell.power * this.partyDamageMult, fromHero: true, color: spell.color, spell, scale: 0.7,
+        owner: hero,
       });
     }
     hero.facing = Math.atan2(target.pos.z - hero.pos.z, target.pos.x - hero.pos.x);
@@ -1173,6 +1381,7 @@ export class Game {
       const handle = this.vfx.telegraph(atk.shape, pos, atk.radius, {
         inner: atk.inner, angle: atk.angle, dir, color: PAL.boss.threat,
       });
+      this.pushNetEvent({ t: 'tg', shape: atk.shape, x: pos.x, z: pos.z, r: atk.radius, inner: atk.inner, angle: atk.angle, dir, dur });
       this.strikes.push({
         handle, t: 0, dur, shape: atk.shape, pos, radius: atk.radius,
         inner: atk.inner ?? 0, angle: atk.angle ?? 0, dir,
@@ -1393,7 +1602,7 @@ export class Game {
             hit = true;
             this.vfx.impact(p.pos, p.color, 0.9);
             if (p.spell?.impactSound) this.audio.play(p.spell.impactSound as never, { volume: 0.8, throttleMs: 100 });
-            this.damageEnemy(u, p.damage, p.color);
+            this.damageEnemy(u, p.damage, p.color, true, p.owner ?? undefined);
             if (p.spell?.dot) u.applyDot(p.spell.dot.dps * this.partyDamageMult, p.spell.dot.duration, p.color, this.now);
             if (p.spell?.slow) u.applySlow(p.spell.slow.factor, p.spell.slow.duration, this.now);
             break;
