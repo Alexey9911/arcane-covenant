@@ -9,7 +9,7 @@ import { IS_MOBILE } from '../core/engine';
 type Projector = (world: THREE.Vector3) => { x: number; y: number; visible: boolean };
 
 const QUAD_POS = ['0% 0%', '100% 0%', '0% 100%', '100% 100%'];
-const ROLE_LABEL: Record<string, string> = { dps: 'DPS', tank: 'TANQUE', healer: 'SANADOR' };
+const ROLE_LABEL: Record<string, string> = { dps: 'DPS', tank: 'TANK', healer: 'HEALER' };
 
 interface CText { el: HTMLDivElement; t: number; dur: number; x: number; y: number; vy: number; active: boolean; }
 
@@ -240,7 +240,7 @@ export class Hud {
     (this.root.parentElement ?? this.root).appendChild(this.chatEl);
     this.chatEl.innerHTML = `
       <div class="chat-log"></div>
-      <input class="chat-input" maxlength="90" placeholder="Escribe… (Enter)" />`;
+      <input class="chat-input" maxlength="90" placeholder="Chat… (Enter)" />`;
     this.chatLog = this.chatEl.querySelector('.chat-log')!;
     this.chatInput = this.chatEl.querySelector('.chat-input')!;
     // mientras escribes, el juego no roba las teclas
@@ -313,16 +313,16 @@ export class Hud {
     }
     this.deathMsg.classList.add('on');
     if (reviverName && remaining !== null) {
-      this.deathMsg.innerHTML = `HAS CAÍDO<span>✚ ${reviverName} te está reviviendo — <b>${remaining.toFixed(1)}s</b></span>`;
+      this.deathMsg.innerHTML = `YOU DIED<span>✚ ${reviverName} reviving you — <b>${remaining.toFixed(1)}s</b></span>`;
     } else {
-      this.deathMsg.innerHTML = `HAS CAÍDO<span>Tu equipo debe revivirte — que mantengan <b>E</b> junto a tu cuerpo</span>`;
+      this.deathMsg.innerHTML = `YOU DIED<span>Your team must revive you — hold <b>E</b> at your body</span>`;
     }
     const s = this.projector(new THREE.Vector3(corpsePos.x, 2.6, corpsePos.z));
     if (s.visible) {
       this.deathArrow.style.display = 'block';
       this.deathArrow.style.transform = `translate(${s.x}px, ${s.y}px) translateX(-50%)`;
       (this.deathArrow.querySelector('.da-label') as HTMLElement).textContent =
-        reviverName && remaining !== null ? `${remaining.toFixed(1)}s` : 'REVIVIR';
+        reviverName && remaining !== null ? `${remaining.toFixed(1)}s` : 'REVIVE';
     } else {
       this.deathArrow.style.display = 'none';
     }
@@ -370,7 +370,7 @@ export class Hud {
       el.innerHTML = `
         <div class="p-portrait" style="background-image:url(${img('portraits_party.jpg')});background-position:${QUAD_POS[h.def.portraitIndex]}"></div>
         <div class="p-body">
-          <div class="p-name"><span>${h.displayName}${h.isPlayer ? ' (TÚ)' : ''}</span><span class="p-role">${ROLE_LABEL[h.def.role]}</span></div>
+          <div class="p-name"><span>${h.displayName}${h.isPlayer ? ' (YOU)' : ''}</span><span class="p-role">${ROLE_LABEL[h.def.role]}</span></div>
           <div class="bar hp"><div class="fill"></div></div>
           <div class="bar mp"><div class="fill"></div></div>
         </div>
@@ -466,7 +466,7 @@ export class Hud {
     } else if (p.reviveTargetId) {
       const corpse = this.heroes.find((h) => h.id === p.reviveTargetId);
       this.castbar.classList.add('on', 'revive');
-      this.castLabel.textContent = `Reviviendo a ${corpse?.def.name ?? ''}…`;
+      this.castLabel.textContent = `Reviving ${corpse?.def.name ?? ''}…`;
       this.castFill.style.setProperty('--v', String(Math.min(1, p.reviveProgress)));
     } else {
       this.castbar.classList.remove('on');
@@ -496,7 +496,7 @@ export class Hud {
       const corpse = this.heroes.find((h) => !h.alive
         && Math.hypot(h.pos.x - p.pos.x, h.pos.z - p.pos.z) < REVIVE_RANGE);
       if (corpse) {
-        this.promptEl.innerHTML = `<b>E</b> Revivir a ${corpse.def.name}`;
+        this.promptEl.innerHTML = `<b>E</b> Revive ${corpse.def.name}`;
         this.promptEl.classList.add('on');
       } else {
         this.promptEl.classList.remove('on');

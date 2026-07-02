@@ -519,7 +519,7 @@ export class Game {
     this.clearBattlefieldSoft();
     const isRunComplete = this.bossIndex >= BOSSES.length - 1;
     bumpStats({ bossKills: 1, goldEarned: reward, victories: isRunComplete ? 1 : 0 });
-    this.hud.chatSystem(`⚔ ${BOSSES[this.bossIndex].name} derrotado (+${reward} oro)`);
+    this.hud.chatSystem(`⚔ ${BOSSES[this.bossIndex].name} defeated (+${reward} gold)`);
     setTimeout(() => {
       if (isRunComplete) {
         this.screens.show('runComplete', { gold: this.gold });
@@ -628,7 +628,7 @@ export class Game {
     const boss = this.boss;
     if (boss) {
       boss.syncVisual(dt, this.time, 0);
-      if (this.introT > 0.6 && !boss.roarPlayed) {
+      if (this.introT > 0.9 && !boss.roarPlayed) {
         boss.roarPlayed = true;
         this.audio.play('boss_roar', { volume: 1 });
         this.camera.addTrauma(0.55);
@@ -744,7 +744,7 @@ export class Game {
       this.clearBattlefieldSoft();
     }
     for (const p of d.payouts) {
-      if (p.amount > 0) this.hud.chatSystem(`◎ ${p.nick} gana ${p.amount} SOL (${p.share}% del daño)`);
+      if (p.amount > 0) this.hud.chatSystem(`◎ ${p.nick} wins ${p.amount} SOL (${p.share}% damage)`);
     }
     this.bossIndex = d.nextBossIndex;
     setTimeout(() => {
@@ -785,7 +785,7 @@ export class Game {
 
     // casteo con barra: moverse lo cancela
     if (p.castingSpell && p.castTotal > 0 && moving) {
-      this.hud.combatText(p.pos, 'Interrumpido', '#8a8798', false);
+      this.hud.combatText(p.pos, 'Interrupted', '#8a8798', false);
       this.cancelPlayerCast();
     }
 
@@ -1094,7 +1094,7 @@ export class Game {
     this.vfx.deathBurst(boss.pos, boss.def.accentColor);
     this.camera.addTrauma(0.9);
     this.engine.pulseChroma(1);
-    this.hud.banner('¡VICTORIA!', `${boss.def.name} ha caído`);
+    this.hud.banner('VICTORY!', `${boss.def.name} has fallen`);
     this.bossSpeak('death');
   }
 
@@ -1112,7 +1112,7 @@ export class Game {
     // el daño interrumpe canales
     if (hero.reviveTargetId) this.stopRevive(hero);
     if (hero.castingSpell && hero.isPlayer && hero.castTotal > 0 && Math.random() < 0.5) {
-      this.hud.combatText(hero.pos, 'Interrumpido', '#8a8798', false);
+      this.hud.combatText(hero.pos, 'Interrupted', '#8a8798', false);
       this.cancelPlayerCast();
     } else if (hero.castingSpell && !hero.isPlayer) {
       hero.cancelCast();
@@ -1128,8 +1128,8 @@ export class Game {
     const ring = this.vfx.zone(hero.pos, 1.3, 0xffe9a3);
     this.corpseRings.set(hero.id, ring);
     // si el muerto eres tú, la guía de muerte (HAS CAÍDO) ya lo comunica
-    if (!hero.isPlayer) this.hud.banner(`${hero.displayName} ha caído`, 'Mantén E junto al cuerpo para revivir');
-    this.hud.chatSystem(`☠ ${hero.displayName} ha caído`);
+    if (!hero.isPlayer) this.hud.banner(`${hero.displayName} is down`, 'Hold E near the body to revive');
+    this.hud.chatSystem(`☠ ${hero.displayName} is down`);
     if (this.boss?.aggroTargetId === hero.id) this.boss.aggroTargetId = 0;
     // el boss devora el alma: recupera vida (desafío extra) y se burla
     if (this.boss?.alive) {
@@ -1176,7 +1176,7 @@ export class Game {
         this.corpseRings.delete(corpse.id);
         this.vfx.reviveBurst(corpse.pos);
         this.audio.play('revive_complete', { volume: 0.95 });
-        this.hud.banner(`${corpse.def.name} vuelve al combate`, '');
+        this.hud.banner(`${corpse.def.name} is back!`, '');
       }
     }
   }
@@ -1462,7 +1462,7 @@ export class Game {
     const boss = this.boss!;
     boss.busyUntil = this.now + sw.duration;
     this.audio.play('boss_cast_dark', { volume: 0.9 });
-    this.hud.banner('¡Rayo Abrasador!', 'Rodéalo');
+    this.hud.banner('Sweeping beam!', 'Circle around');
     const beam = this.vfx.beam(boss.def.accentColor, sw.width);
     const startAngle = Math.atan2(
       (this.player.alive ? this.player.pos.z : 0) - boss.pos.z,
@@ -1510,7 +1510,7 @@ export class Game {
     if (!this.shrinkActive && this.boss.phase >= def.atPhase && this.boss.alive) {
       this.shrinkActive = true;
       this.playRadius = def.radius;
-      this.hud.banner('¡El borde arde!', 'Acércate al centro');
+      this.hud.banner('The edge burns!', 'Move to center');
       this.audio.play('boss_enrage', { volume: 0.9 });
       // anillo de fuego persistente en el borde
       const h = this.vfx.telegraph('ring', new THREE.Vector3(0, 0, 0), PLAY_RADIUS + 1.5, {
@@ -1543,7 +1543,7 @@ export class Game {
   spawnAdds(count: number, hp: number, damage: number, speed: number): void {
     const boss = this.boss!;
     this.audio.play('boss_cast_dark', { volume: 0.9 });
-    this.hud.banner('¡Invocaciones!', 'Elimina a los espectros');
+    this.hud.banner('Summons!', 'Kill the spawns');
     for (let i = 0; i < count; i++) {
       const add = new Add(hp, damage, speed);
       const ang = Math.random() * Math.PI * 2;
@@ -1561,7 +1561,7 @@ export class Game {
     this.camera.addTrauma(0.5);
     this.engine.pulseChroma(0.5);
     this.vfx.nova(boss.pos, boss.def.accentColor, 7);
-    this.hud.banner(`Fase ${phase + 1}`, boss.def.name);
+    this.hud.banner(`PHASE ${phase + 1}`, boss.def.name);
     this.bossSpeak('phase');
   }
 
@@ -1569,7 +1569,7 @@ export class Game {
     const boss = this.boss!;
     this.audio.play('boss_enrage', { volume: 1 });
     this.camera.addTrauma(0.6);
-    this.hud.banner('¡ENFURECIDO!', 'Acaba con él, rápido');
+    this.hud.banner('ENRAGED!', 'Finish it fast');
     this.vfx.shockwave(boss.pos, boss.def.accentColor, 9, 1);
     this.bossSpeak('enrage');
   }

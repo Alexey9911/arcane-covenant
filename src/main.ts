@@ -80,7 +80,7 @@ net.onLobby = (l) => {
     screens.refresh(game);
   }
 };
-net.onCountdown = () => hud.banner('¡La incursión comienza!', 'Preparaos');
+net.onCountdown = () => hud.banner('RAID STARTING!', '');
 net.onMatchStart = (d) => { void game.startNetMatch(d); };
 net.onSnap = (s) => game.onNetSnap(s);
 net.onPInput = (d) => game.onNetInput(d.slot, d.input as never);

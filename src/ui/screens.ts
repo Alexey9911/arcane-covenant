@@ -18,10 +18,10 @@ export interface ScreensCallbacks {
 }
 
 const CLASS_DESC: Record<string, string> = {
-  mage: 'Daño mágico a distancia. Fuego, escarcha y el Meteoro definitivo.',
-  warrior: 'Tanque. Aguanta al boss, provoca y protege a tu equipo.',
-  cleric: 'Sanadora. Cura, revive y castiga con luz sagrada.',
-  ranger: 'Daño físico ágil. Flechas rápidas, veneno y lluvia mortal.',
+  mage: 'Ranged magic DPS. Fire, frost and the Meteor ultimate.',
+  warrior: 'Tank. Holds the boss and protects the team.',
+  cleric: 'Healer. Heals, revives, smites with holy light.',
+  ranger: 'Agile DPS. Fast arrows, poison, deadly rain.',
 };
 
 export interface LocalStats {
@@ -50,11 +50,11 @@ export function bumpStats(patch: Partial<LocalStats>): void {
 
 const QUAD_POS = ['0% 0%', '100% 0%', '0% 100%', '100% 100%'];
 const TIPS = [
-  'Los círculos rojos siempre se pueden esquivar. Muévete.',
-  'Revivir te deja indefenso: elige el momento.',
-  'La Nova de Escarcha ralentiza al boss. Úsala cuando cargue.',
-  'Guarda el Meteoro para las ventanas de castigo.',
-  'Vanguard mantiene la atención del boss. No se la robes.',
+  'Red circles are always dodgeable. Move.',
+  'Reviving leaves you defenseless. Pick your moment.',
+  'Frost Nova slows the boss. Use it on big casts.',
+  'Save Meteor for punish windows.',
+  'Vanguard holds aggro. Let him tank.',
 ];
 
 export class Screens {
@@ -118,8 +118,8 @@ export class Screens {
     const panel = document.createElement('div');
     panel.className = 'setup-panel arc-panel setup-ready';
     panel.innerHTML = `
-      <div class="setup-step">NEXO ONLINE ${net.connected ? `· ${meta?.online ?? 1} CONECTADOS` : '· SIN CONEXIÓN'}</div>
-      <div class="screen-heading">Grupos de incursión</div>
+      <div class="setup-step">ONLINE ${net.connected ? `· ${meta?.online ?? 1} PLAYERS` : '· OFFLINE'}</div>
+      <div class="screen-heading">Raid groups</div>
       <div class="ready-list lobbies-list"></div>
       <div class="lobby-create"></div>
       <div class="setup-actions"></div>`;
@@ -128,9 +128,9 @@ export class Screens {
     const list = panel.querySelector('.lobbies-list')!;
     const lobbies = meta?.lobbies ?? [];
     if (!net.connected) {
-      list.innerHTML = `<div class="screen-sub">Conectando con el Nexo…</div>`;
+      list.innerHTML = `<div class="screen-sub">Connecting…</div>`;
     } else if (lobbies.length === 0) {
-      list.innerHTML = `<div class="screen-sub">No hay grupos abiertos — crea el tuyo</div>`;
+      list.innerHTML = `<div class="screen-sub">No open groups — create one</div>`;
     } else {
       for (const l of lobbies) {
         const row = document.createElement('div');
@@ -138,9 +138,9 @@ export class Screens {
         row.innerHTML = `
           <div class="r-info">
             <div class="r-name">${l.title} <span style="color:var(--muted);font-size:11px">[${l.code}]</span></div>
-            <div class="r-class">${l.mode === 'solana' ? `◎ ${l.bet} SOL` : 'AMISTOSA'} · BOSS ${'I'.repeat(l.bossIndex + 1)} · ${l.players.length}/4</div>
+            <div class="r-class">${l.mode === 'solana' ? `◎ ${l.bet} SOL` : 'FRIENDLY'} · BOSS ${'I'.repeat(l.bossIndex + 1)} · ${l.players.length}/4</div>
           </div>`;
-        row.appendChild(this.btn('Unirse', false, () => {
+        row.appendChild(this.btn('Join', false, () => {
           net.joinLobby(l.code, game.heroes[game.playerIndex].def.id);
         }));
         list.appendChild(row);
@@ -152,9 +152,9 @@ export class Screens {
     const solOk = !!meta?.solana?.enabled;
     create.innerHTML = `
       <div class="create-row">
-        <input class="nick-input c-title" maxlength="24" placeholder="Nombre del grupo…" style="font-size:14px;padding:8px 10px" />
+        <input class="nick-input c-title" maxlength="24" placeholder="Group name…" style="font-size:14px;padding:8px 10px" />
         <select class="c-mode nick-input" style="font-size:13px;padding:8px 6px;width:130px">
-          <option value="normal">Amistosa</option>
+          <option value="normal">Friendly</option>
           ${solOk ? '<option value="solana">◎ Solana</option>' : ''}
         </select>
         <input class="c-bet nick-input" type="number" min="0.01" max="5" step="0.01" value="0.05" style="width:80px;font-size:13px;padding:8px 6px;display:none" />
@@ -164,17 +164,17 @@ export class Screens {
     modeSel.addEventListener('change', () => { betInp.style.display = modeSel.value === 'solana' ? 'block' : 'none'; });
 
     const actions = panel.querySelector('.setup-actions')!;
-    actions.appendChild(this.btn('Crear grupo', true, () => {
+    actions.appendChild(this.btn('Create group', true, () => {
       if (!net.connected) return;
       net.createLobby({
-        title: (create.querySelector('.c-title') as HTMLInputElement).value.trim() || `Cruzada de ${game.nickname}`,
+        title: (create.querySelector('.c-title') as HTMLInputElement).value.trim() || `${game.nickname}'s Raid`,
         mode: modeSel.value as 'normal' | 'solana',
         bet: parseFloat(betInp.value) || 0.05,
         classId: game.heroes[game.playerIndex].def.id,
       });
     }));
-    actions.appendChild(this.btn('Jugar solo (IA)', false, () => this.show('setup', { game, step: 'ready' })));
-    actions.appendChild(this.btn('← Héroe', false, () => this.show('setup', { game, step: 'avatar' })));
+    actions.appendChild(this.btn('Play solo (AI)', false, () => this.show('setup', { game, step: 'ready' })));
+    actions.appendChild(this.btn('← Hero', false, () => this.show('setup', { game, step: 'avatar' })));
 
     // leaderboard global
     const lb = document.createElement('div');
@@ -182,8 +182,8 @@ export class Screens {
     const rows = (meta?.leaderboard ?? []).slice(0, 8).map((p, i) =>
       `<div class="lb-row"><span>${i + 1}. ${p.nick}</span><b>${p.bossKills} ☠ · ${p.solEarned.toFixed(2)} ◎</b></div>`).join('');
     lb.innerHTML = `
-      <div class="screen-heading" style="font-size:17px">Leaderboard global</div>
-      <div class="lb-list">${rows || '<div class="lb-soon">Aún no hay leyendas</div>'}</div>`;
+      <div class="screen-heading" style="font-size:17px">Leaderboard</div>
+      <div class="lb-list">${rows || '<div class="lb-soon">No legends yet</div>'}</div>`;
     wrap.appendChild(lb);
   }
 
@@ -200,9 +200,9 @@ export class Screens {
     const panel = document.createElement('div');
     panel.className = 'setup-panel arc-panel setup-ready';
     panel.innerHTML = `
-      <div class="setup-step">${l.mode === 'solana' ? `◎ APUESTA ${l.bet} SOL · REPARTO POR DAÑO` : 'INCURSIÓN AMISTOSA'} · [${l.code}]</div>
+      <div class="setup-step">${l.mode === 'solana' ? `◎ ${l.bet} SOL · DAMAGE SPLIT` : 'FRIENDLY RAID'} · [${l.code}]</div>
       <div class="screen-heading">${l.title}</div>
-      <div class="screen-sub">Boss ${'I'.repeat(l.bossIndex + 1)}: ${BOSSES[l.bossIndex].name} ${BOSSES[l.bossIndex].title}</div>
+      <div class="screen-sub">Boss ${'I'.repeat(l.bossIndex + 1)}: ${BOSSES[l.bossIndex].name} — ${BOSSES[l.bossIndex].title}</div>
       <div class="ready-list"></div>
       <div class="setup-actions"></div>`;
     wrap.appendChild(panel);
@@ -216,22 +216,22 @@ export class Screens {
         <div class="r-portrait" style="background-image:url(${this.img('portraits_party.jpg')});background-position:${QUAD_POS[cls?.portraitIndex ?? 0]};border-color:${hex(cls?.color ?? 0x888888)}"></div>
         <div class="r-info">
           <div class="r-name" style="color:${hex(cls?.color ?? 0xffffff)}">${p.nick}${p.id === net.myId ? ' (TÚ)' : ''}${p.id === l.hostId ? ' 👑' : ''}</div>
-          <div class="r-class">${cls?.name ?? p.classId}${l.mode === 'solana' ? (p.escrowed ? ' · ◎ DEPOSITADO' : ' · sin depósito') : ''}</div>
+          <div class="r-class">${cls?.name ?? p.classId}${l.mode === 'solana' ? (p.escrowed ? ' · ◎ PAID' : ' · not paid') : ''}</div>
         </div>
-        <div class="r-check">${p.ready ? '✔ LISTO' : '…'}</div>`;
+        <div class="r-check">${p.ready ? '✔ READY' : '…'}</div>`;
       list.appendChild(row);
     }
 
     const actions = panel.querySelector('.setup-actions')!;
     const needsDeposit = l.mode === 'solana' && l.bet > 0 && me && !me.escrowed;
     if (needsDeposit) {
-      actions.appendChild(this.btn(`Depositar ${l.bet} ◎`, true, () => { void this.walletDeposit(game, l.bet); }));
+      actions.appendChild(this.btn(`Deposit ${l.bet} ◎`, true, () => { void this.walletDeposit(game, l.bet); }));
     } else if (me && !me.ready) {
-      actions.appendChild(this.btn('¡Listo para luchar!', true, () => net.setReady(true)));
+      actions.appendChild(this.btn('READY UP', true, () => net.setReady(true)));
     } else {
-      actions.appendChild(this.btn('Cancelar listo', false, () => net.setReady(false)));
+      actions.appendChild(this.btn('Unready', false, () => net.setReady(false)));
     }
-    actions.appendChild(this.btn('Salir del grupo', false, () => {
+    actions.appendChild(this.btn('Leave', false, () => {
       net.leaveLobby();
       this.show('lobbies', { game });
     }));
@@ -283,17 +283,17 @@ export class Screens {
     const panel = document.createElement('div');
     panel.className = 'setup-panel arc-panel setup-nick';
     panel.innerHTML = `
-      <div class="setup-step">PASO 1 / 3</div>
-      <div class="screen-heading">Tu nombre de leyenda</div>
-      <div class="screen-sub">Así te verán tus compañeros en el Nexo</div>`;
+      <div class="setup-step">STEP 1 / 3</div>
+      <div class="screen-heading">Enter your name</div>
+      `;
     const row = document.createElement('div');
     row.className = 'nick-row';
     const inp = document.createElement('input');
     inp.className = 'nick-input';
     inp.maxLength = 16;
-    inp.placeholder = 'Tu nickname…';
+    inp.placeholder = 'Nickname…';
     inp.value = game.nickname;
-    const play = this.btn('Jugar →', true, () => {
+    const play = this.btn('Play →', true, () => {
       const v = inp.value.trim();
       if (!v) { inp.focus(); return; }
       game.setNickname(v);
@@ -322,14 +322,14 @@ export class Screens {
       const spellIcons = kit.map((s) =>
         `<div class="av-spell" title="${s.name}" style="background-image:url(${this.img(`icons_${id}.jpg`)});background-position:${QUAD_POS[s.iconIndex ?? 0]}"></div>`).join('');
       panel.innerHTML = `
-        <div class="setup-step">PASO 2 / 3</div>
-        <div class="screen-heading">Elige tu héroe</div>
+        <div class="setup-step">STEP 2 / 3</div>
+        <div class="screen-heading">Choose your hero</div>
         <div class="avatar-row">
           <button class="av-arrow" data-dir="-1">‹</button>
           <div class="av-card">
             <div class="av-portrait" style="background-image:url(${this.img('portraits_party.jpg')});background-position:${QUAD_POS[hero.def.portraitIndex]};border-color:${hex(hero.def.color)}"></div>
             <div class="av-name" style="color:${hex(hero.def.color)}">${hero.def.name}</div>
-            <div class="av-role">${hero.def.role === 'dps' ? 'DPS' : hero.def.role === 'tank' ? 'TANQUE' : 'SANADORA'}</div>
+            <div class="av-role">${hero.def.role === 'dps' ? 'DPS' : hero.def.role === 'tank' ? 'TANK' : 'HEALER'}</div>
             <div class="av-desc">${CLASS_DESC[id]}</div>
             <div class="av-spells">${spellIcons}</div>
           </div>
@@ -345,7 +345,7 @@ export class Screens {
         });
       });
       const actions = panel.querySelector('.setup-actions')!;
-      actions.appendChild(this.btn('Confirmar héroe', true, () => {
+      actions.appendChild(this.btn('Confirm', true, () => {
         if (net.connected) {
           if (net.lobby) net.updateClass(game.heroes[game.playerIndex].def.id);
           this.show(net.lobby ? 'lobbyRoom' : 'lobbies', { game });
@@ -372,8 +372,8 @@ export class Screens {
     const panel = document.createElement('div');
     panel.className = 'setup-panel arc-panel setup-ready';
     panel.innerHTML = `
-      <div class="setup-step">PASO 3 / 3</div>
-      <div class="screen-heading">Grupo del Nexo</div>
+      <div class="setup-step">STEP 3 / 3</div>
+      <div class="screen-heading">Raid party</div>
       <div class="ready-list"></div>
       <div class="setup-actions"></div>`;
     wrap.appendChild(panel);
@@ -386,9 +386,9 @@ export class Screens {
           <div class="r-portrait" style="background-image:url(${this.img('portraits_party.jpg')});background-position:${QUAD_POS[h.def.portraitIndex]};border-color:${hex(h.def.color)}"></div>
           <div class="r-info">
             <div class="r-name" style="color:${hex(h.def.color)}">${h.isPlayer ? (game.nickname || h.def.name) : h.def.name}${h.isPlayer ? ' (TÚ)' : ''}</div>
-            <div class="r-class">${h.def.name} · ${h.def.role === 'dps' ? 'DPS' : h.def.role === 'tank' ? 'TANQUE' : 'SANADORA'}</div>
+            <div class="r-class">${h.def.name} · ${h.def.role === 'dps' ? 'DPS' : h.def.role === 'tank' ? 'TANK' : 'HEALER'}</div>
           </div>
-          <div class="r-check">${ready[i] ? '✔ LISTO' : '…'}</div>
+          <div class="r-check">${ready[i] ? '✔ READY' : '…'}</div>
         </div>`).join('');
     };
     renderList();
@@ -398,18 +398,18 @@ export class Screens {
     const lb = document.createElement('div');
     lb.className = 'setup-panel arc-panel lb-panel';
     lb.innerHTML = `
-      <div class="screen-heading" style="font-size:17px">Tu historial</div>
+      <div class="screen-heading" style="font-size:17px">Your stats</div>
       <div class="lb-grid">
-        <div class="lb-stat"><b>${stats.bossKills}</b><span>Bosses<br>matados</span></div>
-        <div class="lb-stat"><b>${stats.victories}</b><span>Nexos<br>purificados</span></div>
-        <div class="lb-stat"><b>${stats.goldEarned}</b><span>Oro<br>ganado</span></div>
-        <div class="lb-stat"><b>${stats.solEarned.toFixed(2)}</b><span>SOL<br>ganado</span></div>
+        <div class="lb-stat"><b>${stats.bossKills}</b><span>Boss<br>kills</span></div>
+        <div class="lb-stat"><b>${stats.victories}</b><span>Full<br>clears</span></div>
+        <div class="lb-stat"><b>${stats.goldEarned}</b><span>Gold<br>earned</span></div>
+        <div class="lb-stat"><b>${stats.solEarned.toFixed(2)}</b><span>SOL<br>earned</span></div>
       </div>
-      <div class="lb-soon">Ranking global — próximamente con lobbies online</div>`;
+      <div class="lb-soon">Global ranking — play online lobbies</div>`;
     wrap.appendChild(lb);
 
     const actions = panel.querySelector('.setup-actions')!;
-    const readyBtn = this.btn('¡Listo para luchar!', true, () => {
+    const readyBtn = this.btn('READY UP', true, () => {
       const pIdx = game.playerIndex;
       if (ready[pIdx]) return;
       ready[pIdx] = true;
@@ -429,7 +429,7 @@ export class Screens {
       });
     });
     actions.appendChild(readyBtn);
-    actions.appendChild(this.btn('Cambiar héroe', false, () => this.show('setup', { game, step: 'avatar' })));
+    actions.appendChild(this.btn('Change hero', false, () => this.show('setup', { game, step: 'avatar' })));
   }
 
   private btn(label: string, primary: boolean, onClick: () => void): HTMLButtonElement {
@@ -458,10 +458,10 @@ export class Screens {
     logo.innerHTML = `ARCANE<br>COVENANT<small>BOSS RUSH · MMO</small>`;
     const actions = document.createElement('div');
     actions.className = 'title-actions';
-    actions.appendChild(this.btn('Entrar al Nexo', true, () => this.cb.onTitleEnter()));
+    actions.appendChild(this.btn('PLAY', true, () => this.cb.onTitleEnter()));
     const hint = document.createElement('div');
     hint.className = 'title-hint';
-    hint.textContent = 'WASD moverse · 1-4 hechizos · E revivir · rueda zoom';
+    hint.textContent = 'WASD move · 1-4 spells · E revive · wheel zoom';
     actions.appendChild(hint);
     screen.appendChild(logo);
     screen.appendChild(actions);
@@ -528,9 +528,9 @@ export class Screens {
     const panel = document.createElement('div');
     panel.className = 'market-panel arc-panel';
     panel.innerHTML = `
-      <div class="screen-heading">Mercado Arcano</div>
-      <div class="screen-sub">Invierte tu oro antes del siguiente boss</div>
-      <div class="market-gold">◆ ${game.gold} oro</div>`;
+      <div class="screen-heading">Arcane Market</div>
+      
+      <div class="market-gold">◆ ${game.gold} gold</div>`;
     const grid = document.createElement('div');
     grid.className = 'market-grid';
     for (const u of UPGRADES) {
@@ -546,7 +546,7 @@ export class Screens {
         <div class="u-name">${u.name}</div>
         <div class="u-desc">${u.desc}</div>
         <div class="u-pips">${pips}</div>`;
-      const buy = this.btn(maxed ? 'Máximo' : `${cost} oro`, false, () => {
+      const buy = this.btn(maxed ? 'MAX' : `${cost} gold`, false, () => {
         if (this.cb.onMarketBuy(u.id)) this.show('market', { game });
       });
       buy.disabled = maxed || game.gold < cost;
@@ -556,7 +556,7 @@ export class Screens {
     panel.appendChild(grid);
     const actions = document.createElement('div');
     actions.className = 'market-actions';
-    actions.appendChild(this.btn('Al siguiente boss →', true, () => this.cb.onMarketContinue()));
+    actions.appendChild(this.btn('Next boss →', true, () => this.cb.onMarketContinue()));
     panel.appendChild(actions);
     screen.appendChild(panel);
   }
@@ -564,16 +564,16 @@ export class Screens {
   private buildVictory(screen: HTMLElement, data: { reward: number; boss: BossDef }): void {
     const t = document.createElement('div');
     t.className = 'result-title win';
-    t.textContent = 'VICTORIA';
+    t.textContent = 'VICTORY';
     const sub = document.createElement('div');
     sub.className = 'result-sub';
-    sub.textContent = `${data.boss.name} ${data.boss.title} ha caído`;
+    sub.textContent = `${data.boss.name} has fallen`;
     const gold = document.createElement('div');
     gold.className = 'result-gold';
-    gold.textContent = `+${data.reward} oro`;
+    gold.textContent = `+${data.reward} gold`;
     const actions = document.createElement('div');
     actions.className = 'result-actions';
-    actions.appendChild(this.btn('Ir al mercado', true, () => this.cb.onVictoryContinue()));
+    actions.appendChild(this.btn('To market', true, () => this.cb.onVictoryContinue()));
     screen.appendChild(t);
     screen.appendChild(sub);
     screen.appendChild(gold);
@@ -583,16 +583,16 @@ export class Screens {
   private buildDefeat(screen: HTMLElement, data: { consolation: number }): void {
     const t = document.createElement('div');
     t.className = 'result-title lose';
-    t.textContent = 'DERROTA';
+    t.textContent = 'DEFEAT';
     const sub = document.createElement('div');
     sub.className = 'result-sub';
-    sub.textContent = 'La party ha caído. El Nexo os reclama.';
+    sub.textContent = 'Your party has fallen.';
     const gold = document.createElement('div');
     gold.className = 'result-gold';
-    gold.textContent = `+${data.consolation} oro de consolación`;
+    gold.textContent = `+${data.consolation} gold`;
     const actions = document.createElement('div');
     actions.className = 'result-actions';
-    actions.appendChild(this.btn('Volver al lobby', true, () => this.cb.onDefeatContinue()));
+    actions.appendChild(this.btn('Back to lobby', true, () => this.cb.onDefeatContinue()));
     screen.appendChild(t);
     screen.appendChild(sub);
     screen.appendChild(gold);
@@ -602,16 +602,16 @@ export class Screens {
   private buildRunComplete(screen: HTMLElement, data: { gold: number }): void {
     const t = document.createElement('div');
     t.className = 'result-title win';
-    t.textContent = 'NEXO PURIFICADO';
+    t.textContent = 'NEXUS CLEARED';
     const sub = document.createElement('div');
     sub.className = 'result-sub';
-    sub.textContent = `Los ${BOSSES.length} señores del Nexo han caído ante tu covenant`;
+    sub.textContent = `All ${BOSSES.length} bosses defeated`;
     const gold = document.createElement('div');
     gold.className = 'result-gold';
-    gold.textContent = `Tesoro final: ${data.gold} oro`;
+    gold.textContent = `Total: ${data.gold} gold`;
     const actions = document.createElement('div');
     actions.className = 'result-actions';
-    actions.appendChild(this.btn('Nueva incursión', true, () => this.cb.onRunCompleteContinue()));
+    actions.appendChild(this.btn('Play again', true, () => this.cb.onRunCompleteContinue()));
     screen.appendChild(t);
     screen.appendChild(sub);
     screen.appendChild(gold);

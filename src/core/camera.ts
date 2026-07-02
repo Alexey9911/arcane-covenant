@@ -32,9 +32,17 @@ export class CameraRig {
     this.trauma = Math.min(1.2, this.trauma + amount);
   }
 
+  /** Coloca la cámara YA sobre el objetivo (sin barrido ni lerp desde donde estuviera). */
   snapTo(pos: THREE.Vector3): void {
+    this.cinematic = false;
+    this.trauma = 0;
     this.target.copy(pos);
     this.lookTarget.copy(pos);
+    const y = Math.sin(PITCH) * this.dist;
+    const z = Math.cos(PITCH) * this.dist;
+    this.camera.position.set(pos.x, y + pos.y, pos.z + z);
+    this.camera.rotation.set(0, 0, 0);
+    this.camera.lookAt(pos.x, pos.y, pos.z);
   }
 
   /** Activa modo cinemático: la cámara fluye hacia pos mirando a look. */
@@ -99,7 +107,7 @@ export class CameraRig {
       y + this.lookTarget.y,
       this.lookTarget.z + z + shakeZ,
     );
+    // sin roll: el shake es solo posicional (la cámara siempre queda recta)
     this.camera.lookAt(this.lookTarget.x + shakeX * 0.5, this.lookTarget.y, this.lookTarget.z + shakeZ * 0.5);
-    this.camera.rotation.z += n1 * sh * 0.012;
   }
 }

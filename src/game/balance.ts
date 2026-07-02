@@ -65,88 +65,88 @@ export interface SpellDef {
 export const PLAYER_KITS: Record<ClassId, SpellDef[]> = {
   mage: [
     {
-      id: 'fireball', name: 'Bola de Fuego', kind: 'projectile', cooldown: 1.6, manaCost: 18,
+      id: 'fireball', name: 'Fireball', kind: 'projectile', cooldown: 1.6, manaCost: 18,
       castTime: 0, range: 26, radius: 1.6, speed: 26, power: 62, color: PAL.cls.mage,
       castSound: 'fireball_cast', impactSound: 'fireball_impact', iconIndex: 0,
     },
     {
-      id: 'frostnova', name: 'Nova de Escarcha', kind: 'nova', cooldown: 9, manaCost: 40,
+      id: 'frostnova', name: 'Frost Nova', kind: 'nova', cooldown: 9, manaCost: 40,
       castTime: 0, range: 0, radius: 6.5, power: 48, slow: { factor: 0.8, duration: 2.5 },
       color: 0x67e8f9, castSound: 'frost_nova', iconIndex: 1,
     },
     {
-      id: 'arcanebeam', name: 'Rayo Arcano', kind: 'beam', cooldown: 7, manaCost: 55,
+      id: 'arcanebeam', name: 'Arcane Beam', kind: 'beam', cooldown: 7, manaCost: 55,
       castTime: 2.2, range: 18, radius: 0.8, power: 260, color: PAL.env.runeArcane,
       castSound: 'arcane_beam', iconIndex: 2,
     },
     {
-      id: 'meteor', name: 'Meteoro', kind: 'groundAoe', cooldown: 38, manaCost: 90,
+      id: 'meteor', name: 'Meteor', kind: 'groundAoe', cooldown: 38, manaCost: 90,
       castTime: 1.0, range: 24, radius: 5.2, power: 340, color: 0xff9a3d,
       castSound: 'meteor_incoming', impactSound: 'meteor_impact', iconIndex: 3,
     },
   ],
   warrior: [
     {
-      id: 'shieldbash', name: 'Golpe de Escudo', kind: 'melee', cooldown: 4, manaCost: 12,
+      id: 'shieldbash', name: 'Shield Bash', kind: 'melee', cooldown: 4, manaCost: 12,
       castTime: 0, range: 3.4, radius: 2.2, power: 78, color: PAL.cls.warrior,
       castSound: 'shield_slam', iconIndex: 0,
     },
     {
-      id: 'taunt', name: 'Provocación', kind: 'taunt', cooldown: 12, manaCost: 20,
+      id: 'taunt', name: 'Taunt', kind: 'taunt', cooldown: 12, manaCost: 20,
       castTime: 0, range: 20, power: 0, color: PAL.cls.warrior,
       castSound: 'warrior_taunt', iconIndex: 1,
     },
     {
-      id: 'steelwall', name: 'Muro de Acero', kind: 'buff', cooldown: 18, manaCost: 30,
+      id: 'steelwall', name: 'Steel Wall', kind: 'buff', cooldown: 18, manaCost: 30,
       castTime: 0, range: 0, power: 0.55, color: PAL.ui.shield,
       castSound: 'shield_slam', iconIndex: 2,
     },
     {
-      id: 'earthquake', name: 'Terremoto', kind: 'nova', cooldown: 34, manaCost: 80,
+      id: 'earthquake', name: 'Earthquake', kind: 'nova', cooldown: 34, manaCost: 80,
       castTime: 0, range: 0, radius: 7.5, power: 250, slow: { factor: 0.82, duration: 2 },
       color: PAL.cls.warrior, castSound: 'boss_slam', iconIndex: 3,
     },
   ],
   cleric: [
     {
-      id: 'smitep', name: 'Castigo', kind: 'projectile', cooldown: 1.8, manaCost: 12,
+      id: 'smitep', name: 'Smite', kind: 'projectile', cooldown: 1.8, manaCost: 12,
       castTime: 0, range: 22, radius: 1.0, speed: 25, power: 46, color: PAL.cls.cleric,
       castSound: 'heal_cast', impactSound: 'holy_nova', iconIndex: 0,
     },
     {
-      id: 'healflash', name: 'Destello Curativo', kind: 'heal', cooldown: 4, manaCost: 30,
+      id: 'healflash', name: 'Healing Flash', kind: 'heal', cooldown: 4, manaCost: 30,
       castTime: 1.0, range: 16, power: 165, color: PAL.cls.cleric,
       castSound: 'heal_cast', iconIndex: 1,
     },
     {
-      id: 'holynova', name: 'Nova Sagrada', kind: 'groupHeal', cooldown: 15, manaCost: 70,
+      id: 'holynova', name: 'Holy Nova', kind: 'groupHeal', cooldown: 15, manaCost: 70,
       castTime: 1.2, range: 0, radius: 10, power: 135, color: PAL.cls.cleric,
       castSound: 'holy_nova', iconIndex: 2,
     },
     {
-      id: 'judgement', name: 'Juicio', kind: 'beam', cooldown: 30, manaCost: 85,
+      id: 'judgement', name: 'Judgement', kind: 'beam', cooldown: 30, manaCost: 85,
       castTime: 2.2, range: 17, radius: 0.9, power: 380, color: 0xffe9a3,
       castSound: 'arcane_beam', iconIndex: 3,
     },
   ],
   ranger: [
     {
-      id: 'swiftarrow', name: 'Flecha Rápida', kind: 'projectile', cooldown: 0.9, manaCost: 6,
+      id: 'swiftarrow', name: 'Swift Arrow', kind: 'projectile', cooldown: 0.9, manaCost: 6,
       castTime: 0, range: 26, radius: 0.8, speed: 34, power: 38, color: PAL.cls.ranger,
       castSound: 'arrow_shot', iconIndex: 0,
     },
     {
-      id: 'poisonarrow', name: 'Flecha Venenosa', kind: 'projectile', cooldown: 7, manaCost: 24,
+      id: 'poisonarrow', name: 'Poison Arrow', kind: 'projectile', cooldown: 7, manaCost: 24,
       castTime: 0, range: 26, radius: 0.9, speed: 30, power: 34, dot: { dps: 22, duration: 6 },
       color: PAL.cls.ranger, castSound: 'arrow_shot', impactSound: 'poison_hit', iconIndex: 1,
     },
     {
-      id: 'multishotp', name: 'Descarga Múltiple', kind: 'projectile', cooldown: 9, manaCost: 32,
+      id: 'multishotp', name: 'Multishot', kind: 'projectile', cooldown: 9, manaCost: 32,
       castTime: 0, range: 22, radius: 0.8, speed: 30, power: 30, count: 5,
       color: PAL.cls.ranger, castSound: 'arrow_shot', iconIndex: 2,
     },
     {
-      id: 'arrowrain', name: 'Lluvia de Flechas', kind: 'groundAoe', cooldown: 30, manaCost: 75,
+      id: 'arrowrain', name: 'Arrow Rain', kind: 'groundAoe', cooldown: 30, manaCost: 75,
       castTime: 0.9, range: 24, radius: 4.8, power: 240, dot: { dps: 20, duration: 3 },
       color: PAL.cls.ranger, castSound: 'arrow_shot', impactSound: 'poison_hit', iconIndex: 3,
     },
@@ -158,16 +158,16 @@ export const PLAYER_SPELLS: SpellDef[] = PLAYER_KITS.mage;
 
 // Kits de la IA (usados por los cerebros de compañeros)
 export const AI_SPELLS: Record<string, SpellDef> = {
-  taunt: { id: 'taunt', name: 'Provocación', kind: 'taunt', cooldown: 12, manaCost: 20, castTime: 0, range: 20, power: 0, color: PAL.cls.warrior, castSound: 'warrior_taunt' },
-  shieldslam: { id: 'shieldslam', name: 'Golpe de Escudo', kind: 'melee', cooldown: 6, manaCost: 15, castTime: 0, range: 2.8, power: 55, color: PAL.cls.warrior, castSound: 'shield_slam' },
-  wall: { id: 'wall', name: 'Muro de Acero', kind: 'buff', cooldown: 22, manaCost: 30, castTime: 0, range: 0, power: 0.5, color: PAL.ui.shield },
-  heal: { id: 'heal', name: 'Destello Curativo', kind: 'heal', cooldown: 3.2, manaCost: 30, castTime: 1.2, range: 16, power: 150, color: PAL.cls.cleric, castSound: 'heal_cast' },
-  groupheal: { id: 'groupheal', name: 'Nova Sagrada', kind: 'groupHeal', cooldown: 16, manaCost: 70, castTime: 1.6, range: 0, radius: 10, power: 120, color: PAL.cls.cleric, castSound: 'holy_nova' },
-  smite: { id: 'smite', name: 'Castigo', kind: 'projectile', cooldown: 2.4, manaCost: 10, castTime: 0, range: 14, radius: 0.9, speed: 22, power: 26, color: PAL.cls.cleric, castSound: 'heal_cast' },
-  arrow: { id: 'arrow', name: 'Flecha Rápida', kind: 'projectile', cooldown: 1.1, manaCost: 6, castTime: 0, range: 24, radius: 0.7, speed: 34, power: 34, color: PAL.cls.ranger, castSound: 'arrow_shot' },
-  aifireball: { id: 'aifireball', name: 'Bola de Fuego', kind: 'projectile', cooldown: 2.0, manaCost: 14, castTime: 0, range: 24, radius: 1.3, speed: 26, power: 48, color: PAL.cls.mage, castSound: 'fireball_cast', impactSound: 'fireball_impact' },
-  poison: { id: 'poison', name: 'Flecha Venenosa', kind: 'projectile', cooldown: 8, manaCost: 25, castTime: 0, range: 24, radius: 0.8, speed: 30, power: 30, dot: { dps: 18, duration: 6 }, color: PAL.cls.ranger, castSound: 'arrow_shot', impactSound: 'poison_hit' },
-  multishot: { id: 'multishot', name: 'Descarga Múltiple', kind: 'projectile', cooldown: 10, manaCost: 35, castTime: 0, range: 20, radius: 0.7, speed: 30, power: 26, color: PAL.cls.ranger, castSound: 'arrow_shot' },
+  taunt: { id: 'taunt', name: 'Taunt', kind: 'taunt', cooldown: 12, manaCost: 20, castTime: 0, range: 20, power: 0, color: PAL.cls.warrior, castSound: 'warrior_taunt' },
+  shieldslam: { id: 'shieldslam', name: 'Shield Bash', kind: 'melee', cooldown: 6, manaCost: 15, castTime: 0, range: 2.8, power: 55, color: PAL.cls.warrior, castSound: 'shield_slam' },
+  wall: { id: 'wall', name: 'Steel Wall', kind: 'buff', cooldown: 22, manaCost: 30, castTime: 0, range: 0, power: 0.5, color: PAL.ui.shield },
+  heal: { id: 'heal', name: 'Healing Flash', kind: 'heal', cooldown: 3.2, manaCost: 30, castTime: 1.2, range: 16, power: 150, color: PAL.cls.cleric, castSound: 'heal_cast' },
+  groupheal: { id: 'groupheal', name: 'Holy Nova', kind: 'groupHeal', cooldown: 16, manaCost: 70, castTime: 1.6, range: 0, radius: 10, power: 120, color: PAL.cls.cleric, castSound: 'holy_nova' },
+  smite: { id: 'smite', name: 'Smite', kind: 'projectile', cooldown: 2.4, manaCost: 10, castTime: 0, range: 14, radius: 0.9, speed: 22, power: 26, color: PAL.cls.cleric, castSound: 'heal_cast' },
+  arrow: { id: 'arrow', name: 'Swift Arrow', kind: 'projectile', cooldown: 1.1, manaCost: 6, castTime: 0, range: 24, radius: 0.7, speed: 34, power: 34, color: PAL.cls.ranger, castSound: 'arrow_shot' },
+  aifireball: { id: 'aifireball', name: 'Fireball', kind: 'projectile', cooldown: 2.0, manaCost: 14, castTime: 0, range: 24, radius: 1.3, speed: 26, power: 48, color: PAL.cls.mage, castSound: 'fireball_cast', impactSound: 'fireball_impact' },
+  poison: { id: 'poison', name: 'Poison Arrow', kind: 'projectile', cooldown: 8, manaCost: 25, castTime: 0, range: 24, radius: 0.8, speed: 30, power: 30, dot: { dps: 18, duration: 6 }, color: PAL.cls.ranger, castSound: 'arrow_shot', impactSound: 'poison_hit' },
+  multishot: { id: 'multishot', name: 'Multishot', kind: 'projectile', cooldown: 10, manaCost: 35, castTime: 0, range: 20, radius: 0.7, speed: 30, power: 26, color: PAL.cls.ranger, castSound: 'arrow_shot' },
 };
 
 // ------------------------------------------------------------------- bosses
@@ -221,7 +221,7 @@ export interface BossDef {
 
 export const BOSSES: BossDef[] = [
   {
-    id: 'golem', name: 'Vulkran', title: 'el Gólem Ígneo', modelKey: 'boss_golem',
+    id: 'golem', name: 'Vulkran', title: 'The Magma Golem', modelKey: 'boss_golem',
     portrait: 'portrait_golem', color: 0x2a1f1c, accentColor: 0xff5a1f,
     maxHp: 9200, meleeDamage: 95, meleeInterval: 2.6, meleeRange: 3.4, moveSpeed: 2.6,
     scale: 2.6, radius: 1.9, phases: [0.66, 0.33], enrageAt: 0.2,
@@ -232,7 +232,7 @@ export const BOSSES: BossDef[] = [
     ],
   },
   {
-    id: 'lich', name: 'Mal\'ganeth', title: 'el Liche del Vacío', modelKey: 'boss_lich',
+    id: 'lich', name: 'Mal\'ganeth', title: 'The Void Lich', modelKey: 'boss_lich',
     portrait: 'portrait_lich', color: 0x241f33, accentColor: 0x4ee8e0,
     maxHp: 11800, meleeDamage: 70, meleeInterval: 2.2, meleeRange: 3.0, moveSpeed: 3.0,
     scale: 2.2, radius: 1.5, phases: [0.6, 0.3], enrageAt: 0.15,
@@ -244,7 +244,7 @@ export const BOSSES: BossDef[] = [
     summons: { count: 2, hp: 700, damage: 34, speed: 4.4, atPhase: 1, cooldown: 26 },
   },
   {
-    id: 'demon', name: 'Azkarath', title: 'el Señor Demonio', modelKey: 'boss_demon',
+    id: 'demon', name: 'Azkarath', title: 'The Demon Lord', modelKey: 'boss_demon',
     portrait: 'portrait_demon', color: 0x2b1216, accentColor: 0xff2e4d,
     maxHp: 14500, meleeDamage: 120, meleeInterval: 2.4, meleeRange: 3.6, moveSpeed: 3.2,
     scale: 2.9, radius: 2.0, phases: [0.5], enrageAt: 0.15,
@@ -272,25 +272,25 @@ export const MIN_SLOW_FACTOR = 0.8;
 export type DialogueKey = 'intro' | 'phase' | 'enrage' | 'kill' | 'death';
 export const BOSS_DIALOGUE: Record<string, Record<DialogueKey, string>> = {
   golem: {
-    intro: '¿Quién osa profanar mi arena? ¡Os convertiré en ceniza!',
-    phase: '¡La montaña despierta! ¡Sentid su furia!',
-    enrage: '¡Arderéis! ¡Todos arderéis!',
-    kill: 'Cenizas. Solo quedan cenizas.',
-    death: 'Imposible... la piedra... se quiebra...',
+    intro: 'Who dares enter my arena? I will turn you all to ash!',
+    phase: 'The mountain awakens! Feel its fury!',
+    enrage: 'Burn! All of you, burn!',
+    kill: 'Ashes. Only ashes remain.',
+    death: 'Impossible... the stone... breaks...',
   },
   lich: {
-    intro: 'Vuestras almas ya me pertenecen, mortales.',
-    phase: 'El vacío os devora... lentamente.',
-    enrage: '¡La eternidad os reclama!',
-    kill: 'Qué frágil. Qué inútil.',
-    death: 'El vacío... me llama... a mí...',
+    intro: 'Your souls already belong to me, mortals.',
+    phase: 'The void devours you... slowly.',
+    enrage: 'Eternity claims you all!',
+    kill: 'So fragile. So useless.',
+    death: 'The void... calls... for me...',
   },
   demon: {
-    intro: '¡Bienvenidos a vuestro infierno personal!',
-    phase: '¡Este reino arde con mi ira!',
-    enrage: '¡Sangre! ¡Fuego! ¡Muerte!',
-    kill: '¡Patético! ¿Quién sigue?',
-    death: 'No... yo soy... eterno...',
+    intro: 'Welcome to your own personal hell!',
+    phase: 'This realm burns with my rage!',
+    enrage: 'Blood! Fire! Death!',
+    kill: 'Pathetic! Who is next?',
+    death: 'No... I am... eternal...',
   },
 };
 
@@ -309,10 +309,10 @@ export interface UpgradeDef {
 }
 
 export const UPGRADES: UpgradeDef[] = [
-  { id: 'damage', name: 'Furia Ígnea', desc: '+12% daño de hechizos por nivel', maxLevel: 5, baseCost: 80, costGrowth: 1.5, iconIndex: 0 },
-  { id: 'cdr', name: 'Fluir Temporal', desc: '-8% cooldowns por nivel', maxLevel: 4, baseCost: 90, costGrowth: 1.5, iconIndex: 1 },
-  { id: 'vitality', name: 'Pacto Vital', desc: '+15% vida y maná de la party por nivel', maxLevel: 5, baseCost: 70, costGrowth: 1.45, iconIndex: 2 },
-  { id: 'revive', name: 'Alas de Lumen', desc: '-20% tiempo de revivir por nivel', maxLevel: 3, baseCost: 100, costGrowth: 1.6, iconIndex: 3 },
+  { id: 'damage', name: 'Fire Fury', desc: '+12% spell damage per level', maxLevel: 5, baseCost: 80, costGrowth: 1.5, iconIndex: 0 },
+  { id: 'cdr', name: 'Time Flow', desc: '-8% cooldowns per level', maxLevel: 4, baseCost: 90, costGrowth: 1.5, iconIndex: 1 },
+  { id: 'vitality', name: 'Vital Pact', desc: '+15% party HP and mana per level', maxLevel: 5, baseCost: 70, costGrowth: 1.45, iconIndex: 2 },
+  { id: 'revive', name: 'Lumen Wings', desc: '-20% revive time per level', maxLevel: 3, baseCost: 100, costGrowth: 1.6, iconIndex: 3 },
 ];
 
 export function upgradeCost(def: UpgradeDef, level: number): number {

@@ -83,7 +83,7 @@ function leaveLobby(socket, notify = true) {
         // el host se fue en plena partida: abortar y volver a waiting
         l.status = 'waiting';
         l.players.forEach((p) => { p.ready = false; p.escrowed = false; });
-        io.to(l.code).emit('matchAborted', { reason: 'El anfitrión se desconectó' });
+        io.to(l.code).emit('matchAborted', { reason: 'Host disconnected' });
       }
     }
     if (notify) io.to(l.code).emit('lobbyUpdate', publicLobby(l));
@@ -183,7 +183,7 @@ io.on('connection', (socket) => {
     if (!text) return;
     const verdict = await moderate(text);
     if (!verdict.ok) {
-      socket.emit('chatBlocked', { reason: 'Mensaje bloqueado por el moderador arcano' });
+      socket.emit('chatBlocked', { reason: 'Message blocked by the arcane moderator' });
       return;
     }
     const m = { nick: socket.data.nick, msg: text, ts: Date.now() };
@@ -196,7 +196,7 @@ io.on('connection', (socket) => {
     const code = genCode();
     const l = {
       code,
-      title: String(title || `Cruzada de ${socket.data.nick}`).slice(0, 24),
+      title: String(title || `${socket.data.nick}'s Raid`).slice(0, 24),
       mode: mode === 'solana' && sol.enabled ? 'solana' : 'normal',
       bet: mode === 'solana' ? Math.max(0.01, Math.min(5, Number(bet) || 0.05)) : 0,
       bossIndex: 0,
@@ -212,9 +212,9 @@ io.on('connection', (socket) => {
 
   socket.on('joinLobby', ({ code, classId } = {}) => {
     const l = lobbies.get(String(code ?? '').toUpperCase());
-    if (!l) return socket.emit('errorMsg', { msg: 'Ese grupo ya no existe' });
-    if (l.status !== 'waiting') return socket.emit('errorMsg', { msg: 'Ese grupo está en combate' });
-    if (l.players.length >= 4) return socket.emit('errorMsg', { msg: 'Grupo lleno (4/4)' });
+    if (!l) return socket.emit('errorMsg', { msg: 'Group not found' });
+    if (l.status !== 'waiting') return socket.emit('errorMsg', { msg: 'Group already in combat' });
+    if (l.players.length >= 4) return socket.emit('errorMsg', { msg: 'Group is full (4/4)' });
     leaveLobby(socket, false);
     joinLobbyInternal(socket, l, classId);
   });
@@ -240,7 +240,7 @@ io.on('connection', (socket) => {
     const me = l.players.find((p) => p.id === socket.id);
     if (!me) return;
     if (l.players.some((p) => p.id !== socket.id && p.classId === classId)) {
-      return socket.emit('errorMsg', { msg: 'Esa clase ya está cogida' });
+      return socket.emit('errorMsg', { msg: 'Class already taken' });
     }
     me.classId = classId;
     io.to(l.code).emit('lobbyUpdate', publicLobby(l));
@@ -252,7 +252,7 @@ io.on('connection', (socket) => {
     const me = l.players.find((p) => p.id === socket.id);
     if (!me) return;
     if (ready && l.mode === 'solana' && sol.enabled && l.bet > 0 && !me.escrowed) {
-      return socket.emit('errorMsg', { msg: `Deposita ${l.bet} SOL primero` });
+      return socket.emit('errorMsg', { msg: `Deposit ${l.bet} SOL first` });
     }
     me.ready = !!ready;
     io.to(l.code).emit('lobbyUpdate', publicLobby(l));
@@ -263,7 +263,7 @@ io.on('connection', (socket) => {
     const l = lobbyOf(socket);
     if (!l || l.mode !== 'solana' || !sol.enabled) return;
     const me = l.players.find((p) => p.id === socket.id);
-    if (!me || !me.wallet) return socket.emit('errorMsg', { msg: 'Conecta tu wallet primero' });
+    if (!me || !me.wallet) return socket.emit('errorMsg', { msg: 'Connect your wallet first' });
     const v = await verifyDeposit(String(sig), me.wallet, l.bet);
     if (!v.ok) return socket.emit('errorMsg', { msg: `Depósito no verificado: ${v.error}` });
     me.escrowed = true;
