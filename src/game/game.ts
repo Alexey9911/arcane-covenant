@@ -306,9 +306,28 @@ export class Game {
         else if (kind === 'nova') this.vfx.nova(pos, color, (ev.r as number) ?? 6);
         else if (kind === 'heal') this.vfx.healBurst(pos, color);
         else if (kind === 'revive') this.vfx.reviveBurst(pos);
-        else this.vfx.impact(pos, color, (ev.r as number) ?? 1);
+        else if (kind === 'slash') {
+          pos.y = 0;
+          const dir = (ev.dir as number) ?? 0;
+          const r = (ev.r as number) ?? 4;
+          this.vfx.meleeArc(pos, color, dir, r);
+          this.tmp.set(pos.x + Math.cos(dir) * r * 0.62, 0, pos.z + Math.sin(dir) * r * 0.62);
+          this.vfx.crack(this.tmp, color, 2.8, 7);
+          this.vfx.slamDebris(this.tmp, color, dir);
+          this.audio.play('boss_slam', { volume: 0.8, rate: 1.05, throttleMs: 180 });
+        } else if (kind === 'crack') {
+          pos.y = 0;
+          const r = (ev.r as number) ?? 4;
+          this.vfx.shockwave(pos, color, r * 1.4, 0.5);
+          this.vfx.crack(pos, color, r, 8);
+          this.vfx.slamDebris(pos, color);
+          this.audio.play('boss_slam', { volume: 0.85, rate: 0.92, throttleMs: 180 });
+        } else this.vfx.impact(pos, color, (ev.r as number) ?? 1);
         break;
       }
+      case 'batk':
+        this.boss?.visual?.playAttack((ev.d as number) ?? 1);
+        break;
       case 'proj': {
         this.projectiles.fire({
           from: new THREE.Vector3(ev.x as number, (ev.y as number) ?? 1, ev.z as number),
@@ -951,6 +970,8 @@ export class Game {
       }
       case 'melee': {
         this.audio.play((spell.castSound ?? 'shield_slam') as never, { volume: 0.9 });
+        p.visual?.playAttack(0.5);
+        this.vfx.meleeArc(p.pos, spell.color, p.facing, spell.range + 0.5, Math.PI / 2);
         this.vfx.shockwave(p.pos, spell.color, spell.range, 0.35);
         const targets: Unit[] = [];
         if (this.boss?.alive) targets.push(this.boss);
@@ -1280,6 +1301,7 @@ export class Game {
 
   meleeHit(attacker: Unit, target: Unit, damage: number, color: number, sound?: string): void {
     if (sound) this.audio.play(sound as never, { volume: 0.75 });
+    attacker.visual?.playAttack(0.55);
     this.vfx.impact(this.tmp.set(target.pos.x, target.castHeight * 0.6, target.pos.z), color, 0.7);
     this.damageEnemy(target, damage, color, true, attacker);
   }
@@ -1399,24 +1421,29 @@ export class Game {
       s.t += dt;
       s.handle.setProgress(Math.max(0, Math.min(1, s.t / s.dur)));
       if (s.t < s.dur) return true;
-      // resolver
+      // resolver: los VFX se ven SIEMPRE (también en peers, donde damage=0)
       s.handle.dispose();
+      if (s.resolveSound) this.audio.play(s.resolveSound as never, { volume: 0.85 });
+      if (s.shape === 'ring') {
+        this.vfx.nova(s.pos, s.color, s.radius);
+      } else if (s.shape === 'cone') {
+        this.vfx.shockwave(s.pos, s.color, s.radius, 0.5);
+        this.vfx.burst({
+          count: 30, pos: s.pos.clone().setY(0.3),
+          dir: new THREE.Vector3(Math.cos(s.dir), 0.3, Math.sin(s.dir)), cone: 0.5,
+          speed: [6, 14], life: [0.3, 0.7], size: [0.6, 1.6],
+          colorA: new THREE.Color(0xffffff), colorB: new THREE.Color(s.color), gravity: 8, drag: 0.9,
+        });
+        // grieta en el centro del cono
+        this.tmp.set(s.pos.x + Math.cos(s.dir) * s.radius * 0.45, 0, s.pos.z + Math.sin(s.dir) * s.radius * 0.45);
+        this.vfx.crack(this.tmp, s.color, Math.min(4, s.radius * 0.45), 8);
+      } else {
+        this.vfx.bigImpact(s.pos, s.color, s.radius);
+        // los impactos grandes agrietan el suelo de forma persistente
+        if (s.radius >= 2.5 && !s.persistDps) this.vfx.crack(s.pos, s.color, s.radius * 0.8, 9);
+      }
+      this.camera.addTrauma(0.3);
       if (s.damage > 0) {
-        if (s.resolveSound) this.audio.play(s.resolveSound as never, { volume: 0.85 });
-        if (s.shape === 'ring') {
-          this.vfx.nova(s.pos, s.color, s.radius);
-        } else if (s.shape === 'cone') {
-          this.vfx.shockwave(s.pos, s.color, s.radius, 0.5);
-          this.vfx.burst({
-            count: 30, pos: s.pos.clone().setY(0.3),
-            dir: new THREE.Vector3(Math.cos(s.dir), 0.3, Math.sin(s.dir)), cone: 0.5,
-            speed: [6, 14], life: [0.3, 0.7], size: [0.6, 1.6],
-            colorA: new THREE.Color(0xffffff), colorB: new THREE.Color(s.color), gravity: 8, drag: 0.9,
-          });
-        } else {
-          this.vfx.bigImpact(s.pos, s.color, s.radius);
-        }
-        this.camera.addTrauma(0.3);
         for (const h of this.heroes) {
           if (!h.alive) continue;
           if (this.insideShape(h.pos, s, h.radius * 0.5)) {
@@ -1529,10 +1556,87 @@ export class Game {
     if (this.state !== 'combat') this.playRadius = PLAY_RADIUS;
   }
 
-  bossMelee(target: Hero, dmg: number): void {
-    this.audio.play('boss_slam', { volume: 0.6, rate: 1.2, throttleMs: 300 });
-    this.vfx.impact(this.tmp.set(target.pos.x, 0.8, target.pos.z), PAL.boss.threat, 1.1);
-    this.damageHero(target, dmg);
+  /** Inicia el swing melee del boss: windup animado; el golpe cae en swingLandAt. */
+  bossSwingStart(target: Hero): void {
+    const boss = this.boss!;
+    const speedMult = boss.enraged ? 1.25 : 1;
+    const windup = 0.5 / speedMult;
+    boss.meleeReady = this.now + boss.def.meleeInterval / speedMult;
+    boss.swingLandAt = this.now + windup;
+    boss.swingDir = Math.atan2(target.pos.z - boss.pos.z, target.pos.x - boss.pos.x);
+    boss.facing = boss.swingDir;
+    const animDur = windup / 0.42; // el impacto de la anim cae ~42%
+    boss.visual?.playAttack(animDur);
+    this.audio.play('boss_cast_dark', { volume: 0.4, rate: 1.9, throttleMs: 250 });
+    this.pushNetEvent({ t: 'batk', d: animDur });
+  }
+
+  /** Resuelve el swing: arco frontal que golpea a TODOS los héroes en el cono. */
+  bossMeleeStrike(dir: number): void {
+    const boss = this.boss;
+    if (!boss || !boss.alive) return;
+    const range = boss.def.meleeRange + 1.2;
+    const half = 1.05;
+    const dmg = boss.def.meleeDamage * (boss.enraged ? 1.25 : 1);
+    this.audio.play('boss_slam', { volume: 0.85, rate: 1.05, throttleMs: 180 });
+    this.vfx.meleeArc(boss.pos, boss.def.accentColor, dir, range, half);
+    const hitX = boss.pos.x + Math.cos(dir) * range * 0.62;
+    const hitZ = boss.pos.z + Math.sin(dir) * range * 0.62;
+    this.vfx.crack(this.tmp.set(hitX, 0, hitZ), boss.def.accentColor, 2.8, 7);
+    this.vfx.slamDebris(this.tmp, boss.def.accentColor, dir);
+    this.vfx.flashLight(this.tmp, boss.def.accentColor, 90, 0.35);
+    this.camera.addTrauma(0.3);
+    for (const h of this.heroes) {
+      if (!h.alive) continue;
+      const dx = h.pos.x - boss.pos.x, dz = h.pos.z - boss.pos.z;
+      if (Math.hypot(dx, dz) > range + h.radius) continue;
+      let da = Math.atan2(dz, dx) - dir;
+      da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (Math.abs(da) > half) continue;
+      this.damageHero(h, dmg);
+    }
+    this.pushNetEvent({ t: 'vfx', kind: 'slash', x: boss.pos.x, z: boss.pos.z, dir, r: range, color: boss.def.accentColor });
+  }
+
+  /** Impacto al final de la embestida: AoE alrededor del boss. */
+  bossLungeSlam(): void {
+    const boss = this.boss;
+    if (!boss || !boss.alive) return;
+    const r = boss.radius * 2.4;
+    const dmg = boss.def.meleeDamage * 0.85 * (boss.enraged ? 1.25 : 1);
+    this.audio.play('boss_slam', { volume: 0.9, rate: 0.92 });
+    this.vfx.shockwave(boss.pos, boss.def.accentColor, r * 1.4, 0.5);
+    this.vfx.crack(boss.pos, boss.def.accentColor, r, 8);
+    this.vfx.slamDebris(boss.pos, boss.def.accentColor);
+    this.camera.addTrauma(0.38);
+    this.engine.pulseChroma(0.25);
+    for (const h of this.heroes) {
+      if (!h.alive) continue;
+      if (Math.hypot(h.pos.x - boss.pos.x, h.pos.z - boss.pos.z) <= r + h.radius) {
+        this.damageHero(h, dmg);
+      }
+    }
+    this.pushNetEvent({ t: 'vfx', kind: 'crack', x: boss.pos.x, z: boss.pos.z, r, color: boss.def.accentColor });
+  }
+
+  /** Pisotón: si le rodean, telegraph corto y AoE grande alrededor del boss. */
+  bossStomp(): void {
+    const boss = this.boss!;
+    const r = boss.radius + 3.4;
+    const dur = 0.95;
+    const pos = boss.pos.clone();
+    const dmg = boss.def.meleeDamage * 1.15 * (boss.enraged ? 1.25 : 1);
+    this.audio.play('boss_cast_dark', { volume: 0.8, rate: 1.25 });
+    const handle = this.vfx.telegraph('circle', pos, r, { color: PAL.boss.threat });
+    this.pushNetEvent({ t: 'tg', shape: 'circle', x: pos.x, z: pos.z, r, dur });
+    this.strikes.push({
+      handle, t: 0, dur, shape: 'circle', pos, radius: r,
+      inner: 0, angle: 0, dir: 0, damage: dmg, resolveSound: 'boss_slam',
+      color: PAL.boss.threat,
+    });
+    boss.busyUntil = this.now + dur * 0.75;
+    boss.visual?.playAttack(dur);
+    this.pushNetEvent({ t: 'batk', d: dur });
   }
 
   addMelee(add: Add, target: Hero): void {
@@ -1561,6 +1665,9 @@ export class Game {
     this.camera.addTrauma(0.5);
     this.engine.pulseChroma(0.5);
     this.vfx.nova(boss.pos, boss.def.accentColor, 7);
+    this.vfx.crack(boss.pos, boss.def.accentColor, boss.radius * 2.6, 10);
+    this.vfx.slamDebris(boss.pos, boss.def.accentColor);
+    boss.visual?.playAttack(1.1); // rugido físico: se alza y golpea el suelo
     this.hud.banner(`PHASE ${phase + 1}`, boss.def.name);
     this.bossSpeak('phase');
   }
@@ -1571,6 +1678,9 @@ export class Game {
     this.camera.addTrauma(0.6);
     this.hud.banner('ENRAGED!', 'Finish it fast');
     this.vfx.shockwave(boss.pos, boss.def.accentColor, 9, 1);
+    this.vfx.crack(boss.pos, boss.def.accentColor, boss.radius * 3.2, 14);
+    this.vfx.slamDebris(boss.pos, boss.def.accentColor);
+    boss.visual?.playAttack(1.2);
     this.bossSpeak('enrage');
   }
 

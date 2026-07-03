@@ -7,7 +7,7 @@ import { Hero } from '../entities/units';
 import { net, PInput } from './net';
 
 export interface NetEvent {
-  t: 'tg' | 'vfx' | 'dlg' | 'banner' | 'proj';
+  t: 'tg' | 'vfx' | 'dlg' | 'banner' | 'proj' | 'batk';
   [k: string]: unknown;
 }
 

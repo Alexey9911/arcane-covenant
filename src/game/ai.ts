@@ -249,7 +249,7 @@ export function updateBossAI(boss: Boss, game: Game, dt: number): void {
   // aura de enrage
   if (boss.enraged) game.vfx.enrageAura(boss.pos, dt, boss.def.accentColor);
 
-  // embestida en curso: dash rápido con estela
+  // embestida en curso: dash rápido con estela; al llegar, SLAM con daño AoE
   if (now < boss.lungeUntil) {
     const sp = boss.moveSpeed * 4.4 * speedMult;
     boss.pos.x += boss.lungeDir.x * sp * dt;
@@ -259,9 +259,21 @@ export function updateBossAI(boss: Boss, game: Game, dt: number): void {
     game.vfx.trail(boss.pos, boss.def.accentColor, dt, 220, 2.2);
     boss.syncVisual(dt, game.time, 1);
     if (now + dt >= boss.lungeUntil) {
-      game.vfx.shockwave(boss.pos, boss.def.accentColor, boss.radius * 2.2, 0.4);
-      game.camera.addTrauma(0.25);
+      game.bossLungeSlam();
+      boss.meleeReady = now; // encadena un swing inmediato al aterrizar
     }
+    return;
+  }
+
+  // swing melee: resolver el golpe cuando termina el windup
+  if (boss.swingLandAt > 0 && now >= boss.swingLandAt) {
+    boss.swingLandAt = 0;
+    game.bossMeleeStrike(boss.swingDir);
+  }
+  // durante el windup: quieto, mirando al objetivo del golpe
+  if (boss.swingLandAt > 0) {
+    boss.facing = boss.swingDir;
+    boss.syncVisual(dt, game.time, 0);
     return;
   }
 
@@ -302,6 +314,21 @@ export function updateBossAI(boss: Boss, game: Game, dt: number): void {
     return;
   }
 
+  // pisotón: si ≥2 héroes le rodean, castigo AoE con telegraph corto
+  if (boss.stompReady === 0) boss.stompReady = now + 7; // primer stomp nunca de salida
+  if (now >= boss.stompReady) {
+    let near = 0;
+    for (const h of game.heroes) {
+      if (h.alive && Math.hypot(h.pos.x - boss.pos.x, h.pos.z - boss.pos.z) < boss.radius + 3.0) near++;
+    }
+    if (near >= 2) {
+      boss.stompReady = now + 9 / speedMult;
+      game.bossStomp();
+      boss.syncVisual(dt, game.time, 0);
+      return;
+    }
+  }
+
   // ataque especial
   if (now >= boss.globalAttackReady) {
     const avail = boss.def.attacks.filter((a) =>
@@ -313,7 +340,7 @@ export function updateBossAI(boss: Boss, game: Game, dt: number): void {
       let chosen = avail[0];
       for (const a of avail) { pick -= a.weight; if (pick <= 0) { chosen = a; break; } }
       boss.attackCooldowns.set(chosen.id, now + chosen.cooldown / speedMult);
-      boss.globalAttackReady = now + (4.2 + Math.random() * 1.6) / speedMult;
+      boss.globalAttackReady = now + (2.4 + Math.random() * 1.2) / speedMult;
       game.executeBossAttack(chosen, target);
       boss.syncVisual(dt, game.time, 0);
       return;
@@ -325,8 +352,8 @@ export function updateBossAI(boss: Boss, game: Game, dt: number): void {
   const d = tmpV2.length();
   let speed01 = 0;
   // embestida: si el objetivo está lejos, cargar hacia él (más presencia y amenaza)
-  if (d > 8 && now >= boss.lungeReady) {
-    boss.lungeReady = now + 8 / speedMult;
+  if (d > 7 && now >= boss.lungeReady) {
+    boss.lungeReady = now + 5.5 / speedMult;
     boss.lungeUntil = now + Math.min(0.65, (d - boss.def.meleeRange) / (boss.moveSpeed * 4.4));
     boss.lungeDir.set(tmpV2.x / d, 0, tmpV2.z / d);
     game.audio.play('boss_cast_dark', { volume: 0.6, rate: 1.4 });
@@ -338,10 +365,11 @@ export function updateBossAI(boss: Boss, game: Game, dt: number): void {
     speed01 *= speedMult;
   } else {
     faceTarget(boss, target.pos);
+    // swing con windup animado: el golpe cae 0.5s después en un arco frontal
     if (now >= boss.meleeReady) {
-      boss.meleeReady = now + boss.def.meleeInterval / speedMult;
-      const dmg = boss.def.meleeDamage * (boss.enraged ? 1.25 : 1);
-      game.bossMelee(target, dmg);
+      game.bossSwingStart(target);
+      boss.syncVisual(dt, game.time, 0);
+      return;
     }
   }
   boss.syncVisual(dt, game.time, speed01);

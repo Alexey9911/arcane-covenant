@@ -39,7 +39,7 @@ export class Unit {
   }
 
   applySlow(factor: number, duration: number, now: number): void {
-    // nunca congelar: cualquier slow deja a la unidad al menos al 80% de velocidad
+    // nunca congelar: cualquier slow deja a la unidad al menos a MIN_SLOW_FACTOR
     this.slowFactor = Math.max(MIN_SLOW_FACTOR, factor);
     this.slowUntil = now + duration;
   }
@@ -200,6 +200,10 @@ export class Boss extends Unit {
   lungeReady = 0;
   lungeUntil = 0;
   readonly lungeDir = new THREE.Vector3();
+  /** > 0: hay un swing melee en windup; el golpe cae en ese instante. */
+  swingLandAt = 0;
+  swingDir = 0;
+  stompReady = 0;
 
   constructor(readonly def: BossDef) {
     super(def.accentColor);

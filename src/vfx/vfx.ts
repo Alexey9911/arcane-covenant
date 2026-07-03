@@ -334,10 +334,79 @@ export interface ReticleHandle {
   setVisible(v: boolean): void;
 }
 
+// ============================================================ slash (melee)
+// Arco de barrido: una hoja de energía recorre el sector angular con estela.
+const SLASH_FRAG = /* glsl */ `
+varying vec2 vUv;
+uniform vec3 uColor;
+uniform float uProgress; // 0..1
+uniform float uHalf;     // semiángulo del arco
+
+void main() {
+  float r = length(vUv);
+  if (r > 1.0) discard;
+  float ang = atan(vUv.y, vUv.x);
+  if (abs(ang) > uHalf + 0.15) discard;
+
+  // frente de la hoja: barre de -uHalf a +uHalf
+  float sweep = mix(-uHalf, uHalf, uProgress);
+  float d = ang - sweep;
+
+  // hoja brillante + estela detrás (d < 0 = ya barrido)
+  float blade = exp(-abs(d) * 16.0);
+  float trailMask = (d < 0.0) ? exp(d * 3.2) : 0.0;
+
+  // banda radial (media luna, no disco completo)
+  float radial = smoothstep(0.30, 0.55, r) * (1.0 - smoothstep(0.88, 1.0, r));
+  float fade = 1.0 - uProgress * uProgress;
+
+  float v = (blade * 2.6 + trailMask * 0.85) * radial * fade;
+  vec3 col = uColor * v * 2.4 + vec3(1.0) * blade * radial * fade * 1.4;
+  gl_FragColor = vec4(col, v);
+}
+`;
+
+// ============================================================ crack (decal)
+// Grietas radiales incandescentes que se enfrían: blanco → color → brasa.
+const CRACK_FRAG = /* glsl */ `
+varying vec2 vUv;
+uniform vec3 uColor;
+uniform float uAge;   // 0 recién creada .. 1 apagada
+uniform float uSeed;
+uniform float uTime;
+
+void main() {
+  float r = length(vUv);
+  if (r > 1.0) discard;
+  float ang = atan(vUv.y, vUv.x);
+
+  // 7 ramas radiales con zigzag dependiente del radio (grietas quebradas)
+  float jag = sin(r * 11.0 + uSeed * 7.0) * 0.055 + sin(r * 23.0 + uSeed * 3.0) * 0.03;
+  float branch = abs(fract((ang / 6.28318 + jag) * 7.0 + uSeed) - 0.5);
+  float widthK = 0.035 + r * 0.03; // se abren hacia fuera
+  float crack = 1.0 - smoothstep(0.0, widthK, branch);
+
+  // anillos finos de fractura cruzados
+  float ringCrack = (1.0 - smoothstep(0.0, 0.02, abs(fract(r * 3.0 + uSeed) - 0.5) * 0.5)) * 0.5;
+  crack = max(crack, ringCrack * step(0.25, r));
+
+  crack *= 1.0 - smoothstep(0.72, 1.0, r); // desvanecer al borde
+  if (crack < 0.02) discard;
+
+  float hot = 1.0 - uAge;
+  float ember = 0.72 + 0.28 * sin(uTime * 6.0 + uSeed * 20.0 + r * 9.0);
+  vec3 col = mix(vec3(1.0, 0.97, 0.88), uColor, clamp(uAge * 1.7 + r * 0.3, 0.0, 1.0));
+  float a = crack * (0.12 + hot * 0.88) * ember;
+  gl_FragColor = vec4(col * crack * (0.5 + hot * 3.4) * ember, a);
+}
+`;
+
 // =============================================================== vfx system
 interface Shockwave { mesh: THREE.Mesh; t: number; dur: number; maxR: number; }
 interface Scorch { mesh: THREE.Mesh; t: number; dur: number; }
 interface PooledLight { light: THREE.PointLight; t: number; dur: number; i0: number; }
+interface Slash { mesh: THREE.Mesh; mat: THREE.ShaderMaterial; t: number; dur: number; }
+interface Crack { mesh: THREE.Mesh; mat: THREE.ShaderMaterial; t: number; dur: number; }
 
 export class VfxSystem {
   readonly root = new THREE.Group();
@@ -347,6 +416,8 @@ export class VfxSystem {
   private readonly beams = new Set<{ mesh: THREE.Mesh; mat: THREE.ShaderMaterial; ended: boolean; fade: number }>();
   private shockwaves: Shockwave[] = [];
   private scorches: Scorch[] = [];
+  private slashes: Slash[] = [];
+  private cracks: Crack[] = [];
   private readonly lights: PooledLight[] = [];
   private time = 0;
   private readonly scorchMat: THREE.MeshBasicMaterial;
@@ -492,6 +563,82 @@ export class VfxSystem {
     this.shockwaves.push({ mesh, t: 0, dur, maxR });
   }
 
+  // ---------------------------------------------------------------- slash
+  /** Arco de barrido melee (media luna de energía que barre el sector). */
+  meleeArc(pos: THREE.Vector3, colorHex: number, dir: number, radius: number, half = 1.05): void {
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: TG_VERT,
+      fragmentShader: SLASH_FRAG,
+      uniforms: {
+        uColor: { value: new THREE.Color(colorHex) },
+        uProgress: { value: 0 },
+        uHalf: { value: half },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    });
+    const mesh = new THREE.Mesh(this.tgGeo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.rotation.z = -dir;
+    mesh.position.set(pos.x, 0.35, pos.z);
+    mesh.scale.setScalar(radius);
+    mesh.renderOrder = 6;
+    this.root.add(mesh);
+    this.slashes.push({ mesh, mat, t: 0, dur: 0.3 });
+  }
+
+  // ---------------------------------------------------------------- crack
+  /** Decal persistente de grietas incandescentes que se van enfriando. */
+  crack(pos: THREE.Vector3, colorHex: number, radius: number, dur = 9): void {
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: TG_VERT,
+      fragmentShader: CRACK_FRAG,
+      uniforms: {
+        uColor: { value: new THREE.Color(colorHex) },
+        uAge: { value: 0 },
+        uSeed: { value: Math.random() * 10 },
+        uTime: { value: 0 },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      fog: false,
+    });
+    const mesh = new THREE.Mesh(this.tgGeo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.rotation.z = Math.random() * Math.PI * 2;
+    mesh.position.set(pos.x, 0.05, pos.z);
+    mesh.scale.setScalar(radius);
+    mesh.renderOrder = 2;
+    this.root.add(mesh);
+    this.cracks.push({ mesh, mat, t: 0, dur });
+    this.scorch(pos, radius * 1.15, dur * 0.9);
+  }
+
+  /** Escombros + polvo de un impacto contra el suelo (slam melee, embestida). */
+  slamDebris(pos: THREE.Vector3, colorHex: number, dir?: number): void {
+    const c = new THREE.Color(colorHex);
+    const d = dir !== undefined
+      ? new THREE.Vector3(Math.cos(dir), 0.55, Math.sin(dir))
+      : new THREE.Vector3(0, 1, 0);
+    // brasas que salen disparadas
+    this.burst({
+      count: 42, pos: new THREE.Vector3(pos.x, 0.25, pos.z), spread: 0.6,
+      dir: d, cone: dir !== undefined ? 0.55 : 0.9,
+      speed: [7, 17], life: [0.3, 0.8], size: [0.5, 1.5],
+      colorA: this.cWhite.clone().lerp(c, 0.3), colorB: c, gravity: 14, drag: 0.9,
+    });
+    // polvo pesado que se queda
+    this.burst({
+      count: 18, pos: new THREE.Vector3(pos.x, 0.15, pos.z), spread: 0.9,
+      dir: d, cone: 0.8,
+      speed: [1.5, 4], life: [0.7, 1.4], size: [2.2, 4.2],
+      colorA: c.clone().multiplyScalar(0.5), colorB: new THREE.Color(0x201826), gravity: -0.8, drag: 0.94,
+    });
+  }
+
   // --------------------------------------------------------------- scorch
   scorch(pos: THREE.Vector3, radius: number, dur = 7): void {
     const mesh = new THREE.Mesh(this.tgGeo, this.scorchMat.clone());
@@ -598,6 +745,32 @@ export class VfxSystem {
         return false;
       }
       (s.mesh.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - k * k);
+      return true;
+    });
+
+    this.slashes = this.slashes.filter((s) => {
+      s.t += dt;
+      const k = s.t / s.dur;
+      if (k >= 1) {
+        this.root.remove(s.mesh);
+        s.mat.dispose();
+        return false;
+      }
+      s.mat.uniforms.uProgress.value = k;
+      return true;
+    });
+
+    this.cracks = this.cracks.filter((c) => {
+      c.t += dt;
+      const k = c.t / c.dur;
+      if (k >= 1) {
+        this.root.remove(c.mesh);
+        c.mat.dispose();
+        return false;
+      }
+      // enfriado rápido al principio, brasa larga después
+      c.mat.uniforms.uAge.value = Math.min(1, Math.pow(k, 0.55));
+      c.mat.uniforms.uTime.value = t;
       return true;
     });
 

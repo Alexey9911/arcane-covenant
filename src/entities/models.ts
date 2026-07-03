@@ -10,6 +10,8 @@ export interface CharacterVisual {
   setCast(active: boolean): void;
   setDead(dead: boolean): void;
   hitFlash(): void;
+  /** Golpe procedural (windup → slam → recover). El impacto cae al ~45% de dur. */
+  playAttack(dur: number): void;
   update(dt: number, t: number): void;
 }
 
@@ -148,6 +150,9 @@ class GlbVisual implements CharacterVisual {
   private origIntensity: number[] = [];
   private baseY = 0;
   private arms: ArmFix[] = [];
+  private attackT = -1;
+  private attackDur = 1;
+  private attackK = -1; // 0..1 mientras ataca, -1 inactivo
 
   constructor(model: LoadedModel, spec: ModelSpec) {
     this.height = spec.height;
@@ -219,8 +224,11 @@ class GlbVisual implements CharacterVisual {
     }
   }
 
-  /** Corrige la pose de brazos post-mixer: en idle los baja, al castear levanta uno. */
+  /** Corrige la pose de brazos post-mixer: en idle los baja, al castear levanta
+   * uno y durante un ataque conduce ambos (windup arriba-atrás → slam abajo-adelante). */
   private applyArmPose(strength: number): void {
+    const atk = this.attackK;
+    if (atk >= 0) strength = 1; // el ataque manda sobre la locomoción
     if (this.arms.length === 0 || strength <= 0.01) return;
     this.wrapper.getWorldQuaternion(_q2);
     for (const arm of this.arms) {
@@ -232,8 +240,19 @@ class GlbVisual implements CharacterVisual {
       childBone.getWorldPosition(_v2);
       const cur = _v3.subVectors(_v2, _v1).normalize();
       // objetivo en espacio del modelo -> mundo
-      const raise = this.casting && arm.side === 1;
-      _v2.set(raise ? 0.2 : arm.side * 0.3, raise ? 0.35 : -0.92, raise ? 0.9 : 0.12).normalize();
+      if (atk >= 0) {
+        const w = THREE.MathUtils.smoothstep(atk, 0.34, 0.48); // 0 windup, 1 slam
+        const rec = THREE.MathUtils.smoothstep(atk, 0.72, 1);  // recover -> idle
+        _v2.set(
+          THREE.MathUtils.lerp(arm.side * 0.4, arm.side * 0.16, w),
+          THREE.MathUtils.lerp(0.9, -0.55, w),
+          THREE.MathUtils.lerp(-0.3, 0.85, w),
+        );
+        _v2.lerp(_v1.set(arm.side * 0.3, -0.92, 0.12), rec).normalize();
+      } else {
+        const raise = this.casting && arm.side === 1;
+        _v2.set(raise ? 0.2 : arm.side * 0.3, raise ? 0.35 : -0.92, raise ? 0.9 : 0.12).normalize();
+      }
       _v2.applyQuaternion(_q2);
       _q1.setFromUnitVectors(cur, _v2);
       if (strength < 1) _q1.slerp(new THREE.Quaternion(), 1 - strength);
@@ -247,6 +266,11 @@ class GlbVisual implements CharacterVisual {
 
   setMoving(speed01: number): void { this.speed01 = speed01; }
   setCast(active: boolean): void { this.casting = active; }
+
+  playAttack(dur: number): void {
+    this.attackT = 0;
+    this.attackDur = Math.max(0.25, dur);
+  }
 
   setDead(dead: boolean): void {
     if (this.dead === dead) return;
@@ -282,6 +306,27 @@ class GlbVisual implements CharacterVisual {
     // cast: leve inclinación + brazo simulated por lean
     const castLean = this.casting ? 0.09 : 0;
 
+    // ataque procedural: windup atrás → slam adelante con caída de peso
+    let atkLean = 0;
+    let atkDip = 0;
+    if (this.attackT >= 0) {
+      this.attackT += dt;
+      const k = this.attackT / this.attackDur;
+      if (k >= 1) {
+        this.attackT = -1;
+        this.attackK = -1;
+      } else {
+        this.attackK = k;
+        const w = THREE.MathUtils.smoothstep(k, 0.34, 0.48);
+        const rec = THREE.MathUtils.smoothstep(k, 0.62, 1);
+        const wind = -0.24 * THREE.MathUtils.smoothstep(k, 0, 0.34);
+        atkLean = THREE.MathUtils.lerp(wind, 0.5, w) * (1 - rec);
+        atkDip = w * (1 - rec) * 0.09;
+      }
+    } else {
+      this.attackK = -1;
+    }
+
     // muerte: caer y desvanecer parcialmente
     if (this.dead && this.deadK < 1) {
       this.deadK = Math.min(1, this.deadK + dt * 2.2);
@@ -290,8 +335,8 @@ class GlbVisual implements CharacterVisual {
       }
     }
     const fall = this.dead ? this.deadK : 0;
-    this.root.rotation.x = -fall * Math.PI * 0.46 + castLean;
-    this.root.position.y = this.baseY - fall * 0.12;
+    this.root.rotation.x = -fall * Math.PI * 0.46 + castLean + atkLean;
+    this.root.position.y = this.baseY - fall * 0.12 - atkDip;
 
     // hit flash
     if (this.flashT > 0) {
@@ -326,6 +371,8 @@ class ProceduralVisual implements CharacterVisual {
   private flashT = 0;
   private phase = Math.random() * 10;
   private mats: THREE.MeshStandardMaterial[] = [];
+  private attackT = -1;
+  private attackDur = 1;
 
   constructor(spec: ModelSpec, kind: 'caster' | 'knight' | 'archer' | 'brute') {
     this.height = spec.height;
@@ -432,6 +479,10 @@ class ProceduralVisual implements CharacterVisual {
 
   setMoving(speed01: number): void { this.speed01 = speed01; }
   setCast(active: boolean): void { this.casting = active; }
+  playAttack(dur: number): void {
+    this.attackT = 0;
+    this.attackDur = Math.max(0.25, dur);
+  }
   setDead(dead: boolean): void {
     if (this.dead === dead) return;
     this.dead = dead;
@@ -443,12 +494,29 @@ class ProceduralVisual implements CharacterVisual {
     const s = this.dead ? 0 : this.speed01;
     this.phase += dt * (4 + s * 9);
     const swing = Math.sin(this.phase) * s * 0.65;
-    if (this.armL && !this.casting) this.armL.rotation.x = swing;
-    if (this.armR) this.armR.rotation.x = this.casting ? -1.9 : -swing;
+
+    // ataque procedural: brazos arriba (windup) → slam abajo con lean
+    let atkArm: number | null = null;
+    let atkLean = 0;
+    if (this.attackT >= 0) {
+      this.attackT += dt;
+      const k = this.attackT / this.attackDur;
+      if (k >= 1) {
+        this.attackT = -1;
+      } else {
+        const w = THREE.MathUtils.smoothstep(k, 0.34, 0.48);
+        const rec = THREE.MathUtils.smoothstep(k, 0.62, 1);
+        atkArm = THREE.MathUtils.lerp(-2.4, 0.7, w) * (1 - rec);
+        atkLean = THREE.MathUtils.lerp(-0.18, 0.42, w) * (1 - rec);
+      }
+    }
+
+    if (this.armL) this.armL.rotation.x = atkArm !== null ? atkArm : (this.casting ? 0 : swing);
+    if (this.armR) this.armR.rotation.x = atkArm !== null ? atkArm : (this.casting ? -1.9 : -swing);
     if (this.legL) this.legL.rotation.x = -swing;
     if (this.legR) this.legR.rotation.x = swing;
     this.body.position.y = Math.abs(Math.sin(this.phase)) * s * 0.07 + Math.sin(t * 2.2) * 0.015 * (1 - s);
-    this.body.rotation.x = s * 0.08 + (this.casting ? 0.1 : 0);
+    this.body.rotation.x = s * 0.08 + (this.casting ? 0.1 : 0) + atkLean;
 
     if (this.dead && this.deadK < 1) this.deadK = Math.min(1, this.deadK + dt * 2.2);
     if (!this.dead && this.deadK > 0) this.deadK = 0;

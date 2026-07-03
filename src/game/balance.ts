@@ -60,8 +60,9 @@ export interface SpellDef {
 }
 
 // Kits jugables por clase (slot 1-4; iconos en icons_{clase}.jpg por cuadrante).
-// Nota de balance: los slows NUNCA congelan — factor mínimo 0.8 (el boss se
-// mueve al 80%), duraciones cortas. Sensación de impacto sin romper el ritmo.
+// Nota de balance: los slows NUNCA congelan — factor mínimo MIN_SLOW_FACTOR.
+// El hielo es la herramienta táctica principal para kitear al boss y ganar
+// ventanas de revive; el resto del kit apenas ralentiza.
 export const PLAYER_KITS: Record<ClassId, SpellDef[]> = {
   mage: [
     {
@@ -71,7 +72,7 @@ export const PLAYER_KITS: Record<ClassId, SpellDef[]> = {
     },
     {
       id: 'frostnova', name: 'Frost Nova', kind: 'nova', cooldown: 9, manaCost: 40,
-      castTime: 0, range: 0, radius: 6.5, power: 48, slow: { factor: 0.8, duration: 2.5 },
+      castTime: 0, range: 0, radius: 6.5, power: 48, slow: { factor: 0.65, duration: 3.2 },
       color: 0x67e8f9, castSound: 'frost_nova', iconIndex: 1,
     },
     {
@@ -103,7 +104,7 @@ export const PLAYER_KITS: Record<ClassId, SpellDef[]> = {
     },
     {
       id: 'earthquake', name: 'Earthquake', kind: 'nova', cooldown: 34, manaCost: 80,
-      castTime: 0, range: 0, radius: 7.5, power: 250, slow: { factor: 0.82, duration: 2 },
+      castTime: 0, range: 0, radius: 7.5, power: 250, slow: { factor: 0.7, duration: 2.4 },
       color: PAL.cls.warrior, castSound: 'boss_slam', iconIndex: 3,
     },
   ],
@@ -223,38 +224,38 @@ export const BOSSES: BossDef[] = [
   {
     id: 'golem', name: 'Vulkran', title: 'The Magma Golem', modelKey: 'boss_golem',
     portrait: 'portrait_golem', color: 0x2a1f1c, accentColor: 0xff5a1f,
-    maxHp: 9200, meleeDamage: 95, meleeInterval: 2.6, meleeRange: 3.4, moveSpeed: 2.6,
+    maxHp: 10800, meleeDamage: 150, meleeInterval: 1.7, meleeRange: 3.4, moveSpeed: 3.0,
     scale: 2.6, radius: 1.9, phases: [0.66, 0.33], enrageAt: 0.2,
     attacks: [
-      { id: 'slam', name: 'Golpe Sísmico', shape: 'cone', radius: 9, angle: Math.PI / 2.6, telegraphTime: 1.6, damage: 170, target: 'tank', cooldown: 9, weight: 3, sound: 'boss_cast_dark', resolveSound: 'boss_slam' },
-      { id: 'firerings', name: 'Anillos de Fuego', shape: 'ring', radius: 7, inner: 4, telegraphTime: 1.8, damage: 130, target: 'self', count: 3, interval: 0.85, cooldown: 14, weight: 2, minPhase: 1, sound: 'boss_cast_dark', resolveSound: 'fireball_impact' },
-      { id: 'meteorrain', name: 'Lluvia de Meteoros', shape: 'circle', radius: 3.4, telegraphTime: 2.2, damage: 150, target: 'players', count: 5, interval: 0.28, cooldown: 18, weight: 2, minPhase: 2, sound: 'meteor_incoming', resolveSound: 'meteor_impact' },
+      { id: 'slam', name: 'Golpe Sísmico', shape: 'cone', radius: 9, angle: Math.PI / 2.6, telegraphTime: 1.6, damage: 210, target: 'tank', cooldown: 7, weight: 3, sound: 'boss_cast_dark', resolveSound: 'boss_slam' },
+      { id: 'firerings', name: 'Anillos de Fuego', shape: 'ring', radius: 7, inner: 4, telegraphTime: 1.8, damage: 165, target: 'self', count: 3, interval: 0.85, cooldown: 12, weight: 2, minPhase: 1, sound: 'boss_cast_dark', resolveSound: 'fireball_impact' },
+      { id: 'meteorrain', name: 'Lluvia de Meteoros', shape: 'circle', radius: 3.4, telegraphTime: 2.2, damage: 185, target: 'players', count: 5, interval: 0.28, cooldown: 15, weight: 2, minPhase: 2, sound: 'meteor_incoming', resolveSound: 'meteor_impact' },
     ],
   },
   {
     id: 'lich', name: 'Mal\'ganeth', title: 'The Void Lich', modelKey: 'boss_lich',
     portrait: 'portrait_lich', color: 0x241f33, accentColor: 0x4ee8e0,
-    maxHp: 11800, meleeDamage: 70, meleeInterval: 2.2, meleeRange: 3.0, moveSpeed: 3.0,
+    maxHp: 13500, meleeDamage: 115, meleeInterval: 1.6, meleeRange: 3.0, moveSpeed: 3.3,
     scale: 2.2, radius: 1.5, phases: [0.6, 0.3], enrageAt: 0.15,
     attacks: [
-      { id: 'frostzone', name: 'Suelo Gélido', shape: 'circle', radius: 4.2, telegraphTime: 1.5, damage: 60, target: 'random', count: 2, interval: 0.4, cooldown: 11, weight: 3, persistDps: 45, persistTime: 7, slow: { factor: 0.8, duration: 1.0 }, sound: 'boss_cast_dark', resolveSound: 'frost_nova' },
-      { id: 'voidbarrage', name: 'Andanada del Vacío', shape: 'circle', radius: 2.6, telegraphTime: 1.3, damage: 110, target: 'players', count: 4, interval: 0.22, cooldown: 13, weight: 2, minPhase: 1, sound: 'boss_cast_dark', resolveSound: 'fireball_impact' },
-      { id: 'voidring', name: 'Colapso del Vacío', shape: 'ring', radius: 9.5, inner: 3.2, telegraphTime: 2.1, damage: 165, target: 'self', cooldown: 16, weight: 2, minPhase: 2, sound: 'boss_cast_dark', resolveSound: 'boss_slam' },
+      { id: 'frostzone', name: 'Suelo Gélido', shape: 'circle', radius: 4.2, telegraphTime: 1.5, damage: 80, target: 'random', count: 2, interval: 0.4, cooldown: 10, weight: 3, persistDps: 60, persistTime: 7, slow: { factor: 0.8, duration: 1.0 }, sound: 'boss_cast_dark', resolveSound: 'frost_nova' },
+      { id: 'voidbarrage', name: 'Andanada del Vacío', shape: 'circle', radius: 2.6, telegraphTime: 1.3, damage: 140, target: 'players', count: 4, interval: 0.22, cooldown: 11, weight: 2, minPhase: 1, sound: 'boss_cast_dark', resolveSound: 'fireball_impact' },
+      { id: 'voidring', name: 'Colapso del Vacío', shape: 'ring', radius: 9.5, inner: 3.2, telegraphTime: 2.1, damage: 205, target: 'self', cooldown: 14, weight: 2, minPhase: 2, sound: 'boss_cast_dark', resolveSound: 'boss_slam' },
     ],
-    summons: { count: 2, hp: 700, damage: 34, speed: 4.4, atPhase: 1, cooldown: 26 },
+    summons: { count: 2, hp: 700, damage: 42, speed: 4.4, atPhase: 1, cooldown: 24 },
   },
   {
     id: 'demon', name: 'Azkarath', title: 'The Demon Lord', modelKey: 'boss_demon',
     portrait: 'portrait_demon', color: 0x2b1216, accentColor: 0xff2e4d,
-    maxHp: 14500, meleeDamage: 120, meleeInterval: 2.4, meleeRange: 3.6, moveSpeed: 3.2,
+    maxHp: 16800, meleeDamage: 185, meleeInterval: 1.5, meleeRange: 3.6, moveSpeed: 3.6,
     scale: 2.9, radius: 2.0, phases: [0.5], enrageAt: 0.15,
     attacks: [
-      { id: 'hellslam', name: 'Tajo Infernal', shape: 'cone', radius: 10, angle: Math.PI / 2.4, telegraphTime: 1.4, damage: 190, target: 'tank', cooldown: 8, weight: 3, sound: 'boss_cast_dark', resolveSound: 'boss_slam' },
-      { id: 'brimstone', name: 'Azufre', shape: 'circle', radius: 3.2, telegraphTime: 1.9, damage: 160, target: 'players', count: 6, interval: 0.24, cooldown: 15, weight: 2, sound: 'meteor_incoming', resolveSound: 'meteor_impact' },
-      { id: 'hellring', name: 'Corona de Fuego', shape: 'ring', radius: 8.5, inner: 3.5, telegraphTime: 1.7, damage: 175, target: 'self', count: 2, interval: 1.0, cooldown: 14, weight: 2, minPhase: 1, sound: 'boss_cast_dark', resolveSound: 'fireball_impact' },
+      { id: 'hellslam', name: 'Tajo Infernal', shape: 'cone', radius: 10, angle: Math.PI / 2.4, telegraphTime: 1.4, damage: 240, target: 'tank', cooldown: 7, weight: 3, sound: 'boss_cast_dark', resolveSound: 'boss_slam' },
+      { id: 'brimstone', name: 'Azufre', shape: 'circle', radius: 3.2, telegraphTime: 1.9, damage: 200, target: 'players', count: 6, interval: 0.24, cooldown: 13, weight: 2, sound: 'meteor_incoming', resolveSound: 'meteor_impact' },
+      { id: 'hellring', name: 'Corona de Fuego', shape: 'ring', radius: 8.5, inner: 3.5, telegraphTime: 1.7, damage: 215, target: 'self', count: 2, interval: 1.0, cooldown: 12, weight: 2, minPhase: 1, sound: 'boss_cast_dark', resolveSound: 'fireball_impact' },
     ],
-    sweepBeam: { dps: 210, duration: 6, length: 19, width: 2.2, rotSpeed: 0.55, cooldown: 24, minPhase: 1 },
-    shrinkArena: { atPhase: 1, radius: 14.5, edgeDps: 70 },
+    sweepBeam: { dps: 260, duration: 6, length: 19, width: 2.2, rotSpeed: 0.55, cooldown: 22, minPhase: 1 },
+    shrinkArena: { atPhase: 1, radius: 14.5, edgeDps: 90 },
   },
 ];
 
@@ -264,8 +265,10 @@ export const ADD_RADIUS = 0.5;
 // El boss se cura al matar a un héroe (desafío extra, notorio pero no letal)
 export const BOSS_HEAL_ON_KILL = 0.08; // 8% de su vida máxima
 
-// Slow mínimo sobre CUALQUIER unidad: nunca por debajo del 80% de velocidad
-export const MIN_SLOW_FACTOR = 0.8;
+// Slow mínimo sobre CUALQUIER unidad: nunca congelar. El hielo es la ventaja
+// táctica clave del grupo (kitear al boss para revivir), así que ralentiza
+// fuerte — pero el boss SIEMPRE sigue moviéndose (65% de velocidad mínimo).
+export const MIN_SLOW_FACTOR = 0.65;
 
 // ------------------------------------------------------------ diálogos boss
 // El texto debe coincidir con los audios generados en public/audio/voice/

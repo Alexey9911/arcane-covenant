@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "typegpu": {
+      "source": "software-mansion-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/typegpu/SKILL.md",
+      "computedHash": "df3150a892a1703546d8bf246baef319e25942ada1cf4cedb9bb8f4d259ca248"
+    }
+  }
+}
